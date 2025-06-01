@@ -1,0 +1,13 @@
+
+  [
+    {
+      "study_id": "OSD-840",
+      "title": "Unraveling the ceRNA Network...",
+      "organisms": ["Mus musculus"],
+      "factors": ["Ionizing Radiation"],
+      "assay_types": ["transcription profiling"],
+      "release_date": "2025-05-05",
+      "description": "...",
+      "highlights": ["cgene"]
+    }
+  ]
