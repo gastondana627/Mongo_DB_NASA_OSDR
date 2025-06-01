@@ -3,3 +3,8 @@ pandas
 python-dotenv  # if you want to load environment variables like MONGO_URI
 
 streamlit
+
+
+neo4j
+
+
