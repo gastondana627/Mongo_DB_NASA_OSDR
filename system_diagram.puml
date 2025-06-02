@@ -1,0 +1,30 @@
+Explanation of the PlantUML code:
+
+
+https://editor.plantuml.com/uml/VLPBK-Cu4BxxL_JcC9jKGKvxeY0rG0Q66HvP34FjYH9snn5H92F9oNYt-E_Racp7JWoNLDpghvzVj_JLMAPjiHBH7tQ1AuGLiwWvYoBBhK2uFOrFuIwUtiEKMGRVVblD4giqV86VKcq4fXd2fMRv0kBIM5p1XL2RA0fAZmPr5EKiMJ9I6xXFk9BaOCuIX65iDRALu7OqWEDZKtyzhnYNpopFntavcS1_4K2YLhcIA2qCdl057gy6m0mq-CShhmLG64oO8LSFccSPUMj7pPNqiCVpIj25VFkT2wKHRfJCrFJCGnjzV-HFkg1V73UxbQX0Fo_zuV7nHM4BZPC98T-ZzrOzV72doLl13NVHmJKhKGzsC_RbZnCoxGvTtk4_cPuhJGsZWlfI4OpiEaYC0YKlLd2-q6g5KytN5ROjS6w4Ab8ORDjCvQLWqEjIcL1B9c8Ix0SUKuVTLolebEGllYvL4RsPwd-CcdnMZKgK4EXROc1WR95ofDWQOTLUBzvAVG4fHsqv4OZI_17VtS9TOVF2mWKN8UeVHadtGULH9jNFbVNnAycfHkqyTYdiKu5XQDXehn6tgFvw3PIwaXcQ9b9_q8YeFJotdN84P71ILSMBffL6rq_G-yLDmGJ_bmLgg8mdMs1zw5aWdUHvtOW26IZHF-7av0JkKNWRPi5p0qoc8GKtgCOfH94VpCDKRUJXf3DLHs5SgTW6XedWoT8Sm9mBafbH5BLL2TaC5k6yoO20mGNQP146AjegZPt3yQIXitEsLaiY0WODtxhosPLnwBnLUZMkJMK2dojfjH86NZGbHkpkd8zf8ImieTga9jJtXuSPLUYjeDvHZhTipJDQWGTmYHPcn1BAimCP2vpRVU-L7KCzD9J1yFl3pVLe9uGYxsHxZqGpuh_pugEdvZT97hOrPqmxeyxcGRtDmdoKC4NBk33RwWGldIRMdgwviQ3cCEL-dfXsKpUivcoddtMLct4wWfYjIPy90VN43jUSGM79Ft5kr8lVcs97ZfpwOpyrrKkkxHQk6KQtX73eYfF09Iq_NvTAMmV6jP2V1VPtWRucrSgAzdL2UVU2gIjyuUF0j6uEKNVFVx1WV6UdtEI2bRlDTACRjb0Ozt2hDgqOau6-dKC6Xs4tgq8dEEgB_nFegV0yjyHMw9Zf1PoSJBfBZ4myQHeHMb4gfTyltStJqz7gYjpP5k5ElHm0tMx0F47Ag56ksxUx1e-sKvpv_UdGOO7mDDhLxbXf9N1UvWiwTZmelOMuUF7cegvcQ69V3847rQftxTzpNJ6eIVuUPUgu6p1376VZ0vYL186mHRQvzrAdNj6kRTw6OqziIy5b1aEL-r4NeyWikSoPPYlmhpEdWS0sQ6X5jGxhjusx_CxefioqAcHA5A9gNBibUYOATs6TAKrX1_cKwQKNlxSCRM-qFbCp9l2Xq6-5ugRFN4pKGKgdxDWCxvi-UqyBPBRhtxzjFapZd9uleWDexkiFCPTAf2ZlLVeF2ZUHdT3gPyc7w1cNomwaVeWun4ihVvzsBGfzIfbPOEekzRbIr6-wdoHrtTAgsN2xW9bWqZxUNCCXpBHwfMdtEoDPK5ZHLsAOU-D7_mC0
+
+
+
+
+
+
+
+@startuml and @enduml: Define the start and end of the diagram.
+!theme materia: Applies a modern theme (you can try others like cerulean, sketchy, etc.).
+title: Sets a title for your diagram.
+actor User: Defines the user interacting with the system.
+package "Name" <<script.py>> { ... }: Groups related components. The <<script.py>> is a stereotype indicating the primary script involved.
+component "Component Name" as Alias: Defines a software component.
+usecase "Action": Represents a user interaction or a system function within the UI.
+agent "Selenium ChromeDriver": Represents an automated agent.
+cloud "NASA OSDR Website": Represents an external web service.
+database "MongoDB": Represents a database.
+collections "studies Collection": Represents a specific collection within the DB.
+artifact "JSON Output File": Represents a file produced by the system.
+Arrows:
+--> or ->: Represents a directed association or data flow.
+..> or . (with direction): Represents a dependency or return flow, often dotted for replies or asynchronous actions.
+==>: Can be used for strong data flow, e.g., ingestion.
+' === Comments ===: Lines starting with a single quote are comments.
+skinparam: Used for styling various elements (colors, borders, etc.). You can customize these.
+footer: Adds a footer to the diagram.

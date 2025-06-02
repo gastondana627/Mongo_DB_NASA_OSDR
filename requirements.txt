@@ -8,3 +8,9 @@ streamlit
 neo4j
 
 
+selenium
+beautifulsoup4
+# neo4j # Add when you start Neo4j integration
+# requests # If used in other parts of your project
+# pandas # If you plan to use it for data manipulation
+# lxml # Often used as a parser with BeautifulSoup for speed
