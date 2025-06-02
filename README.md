@@ -36,8 +36,8 @@ This project is a Python-based application designed to extract research study da
 
 1.  **Clone the Repository:**
     ```bash
-    git clone [https://github.com/](https://github.com/)[your-github-username]/[your-repo-name].git
-    cd [your-repo-name]
+    git clone [GASTONDANA627]/[ttps://github.com/gastondana627/Mongo_DB_NASA_OSDR.git
+    cd Mongo_DB_NASA_OSDR
     ```
 2.  **Create a Python Virtual Environment (Recommended):**
     ```bash
