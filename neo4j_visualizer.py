@@ -25,3 +25,5 @@ def display_graph(results):
     net.from_nx(G)
     net.show("graph.html")
     components.html(open("graph.html", "r", encoding="utf-8").read(), height=620)
+
+    
