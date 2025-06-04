@@ -6,15 +6,58 @@ import traceback
 from dotenv import load_dotenv
 from pymongo import MongoClient
 import sys 
-import time # Added for placeholder simulation
+import time
+import random # For random emoji selection
 
 # === Import Custom Functions ===
-from scraper.formatter import extract_study_data
-from scraper.utils import save_to_json, save_to_mongo
-# Assuming these exist and are correctly defined in your project structure:
-# from save_all_metadata import save_all_metadata # Placeholder
-# from scraper.get_osds import get_all_osds       # Placeholder
-# from scraper.save_osd_list import save_osd_list # Placeholder
+from scraper.formatter import extract_study_data 
+from scraper.utils import save_to_json, save_to_mongo 
+# Assuming these exist if you uncomment them later:
+# from save_all_metadata import save_all_metadata 
+# from scraper.get_osds import get_all_osds       
+# from scraper.save_osd_list import save_os_d_list 
+
+# === CUSTOM EMOJI HELPER FUNCTIONS ===
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) 
+EMOJI_ASSETS_DIR = os.path.join(BASE_DIR, "assets", "emojis") 
+VALID_IMAGE_EXTENSIONS = ('.svg', '.png', '.jpg', '.jpeg', '.gif') 
+
+# print(f"[Debug App Start] BASE_DIR: {BASE_DIR}") # Uncomment for path debugging
+# print(f"[Debug App Start] EMOJI_ASSETS_DIR: {EMOJI_ASSETS_DIR}")
+
+@st.cache_data 
+def get_all_emoji_image_paths(subfolder=None):
+    target_dir = EMOJI_ASSETS_DIR
+    if subfolder:
+        target_dir = os.path.join(EMOJI_ASSETS_DIR, subfolder)
+    # print(f"[Debug Emoji Loader] Attempting to list from: {target_dir}") # Uncomment for path debugging
+    if not os.path.exists(target_dir):
+        print(f"WARNING: Emoji asset directory NOT FOUND: {target_dir}")
+        return []
+    images = []
+    try:
+        found_files = os.listdir(target_dir)
+        # print(f"[Debug Emoji Loader] Files in '{target_dir}': {found_files}") # Uncomment for path debugging
+        for f_name in found_files:
+            full_file_path = os.path.join(target_dir, f_name)
+            if os.path.isfile(full_file_path) and f_name.lower().endswith(VALID_IMAGE_EXTENSIONS):
+                images.append(full_file_path)
+    except Exception as e:
+        print(f"ERROR listing emoji image files in {target_dir}: {e}")
+        return []
+    # if not images: print(f"[Debug Emoji Loader] No valid images found in {target_dir}") # Uncomment for path debugging
+    # else: print(f"[Debug Emoji Loader] Valid images from {target_dir}: {images}") # Uncomment for path debugging
+    return images
+
+def get_random_emoji_image_path(subfolder=None, fallback_emoji="❓"):
+    image_paths = get_all_emoji_image_paths(subfolder=subfolder) 
+    if not image_paths:
+        # print(f"[Debug Emoji Chooser] No paths for subfolder '{subfolder}', using fallback.") # Uncomment for path debugging
+        return fallback_emoji 
+    chosen_path = random.choice(image_paths)
+    # print(f"[Debug Emoji Chooser] Chose for subfolder '{subfolder}': {chosen_path}") # Uncomment for path debugging
+    return chosen_path
+# === END OF CUSTOM EMOJI HELPER FUNCTIONS ===
 
 # === Optional: Neo4j Integration ===
 try:
@@ -22,30 +65,30 @@ try:
     neo4j_enabled = True
 except ImportError:
     neo4j_enabled = False
-    print("Neo4j visualizer module not found or error during import.")
+    # print("Warning: Neo4j visualizer module not found. Neo4j features disabled.")
 
 # === Streamlit Page Config ===
 st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
 
 # === Session State Initialization ===
-# (Session state initializations as in the previous full snippet you have - no changes needed here)
-if 'scraping_in_progress' not in st.session_state:
-    st.session_state.scraping_in_progress = False
-if 'last_scrape_status_message' not in st.session_state:
-    st.session_state.last_scrape_status_message = ""
-if 'last_scrape_status_type' not in st.session_state: 
-    st.session_state.last_scrape_status_type = "info"
-if 'selected_study_for_kg' not in st.session_state:
-    st.session_state.selected_study_for_kg = None
+if 'scraping_in_progress' not in st.session_state: st.session_state.scraping_in_progress = False
+if 'last_scrape_status_message' not in st.session_state: st.session_state.last_scrape_status_message = ""
+if 'last_scrape_status_type' not in st.session_state: st.session_state.last_scrape_status_type = "info"
+if 'selected_study_for_kg' not in st.session_state: st.session_state.selected_study_for_kg = None
+if 'current_scrape_progress' not in st.session_state: st.session_state.current_scrape_progress = 0
+if 'current_scrape_progress_text' not in st.session_state: st.session_state.current_scrape_progress_text = ""
+if 'search_triggered_by_button' not in st.session_state: st.session_state.search_triggered_by_button = False
 
+
+if 'app_title_emoji_left' not in st.session_state: st.session_state.app_title_emoji_left = get_random_emoji_image_path(fallback_emoji="🛰️")
+if 'app_title_emoji_right' not in st.session_state: st.session_state.app_title_emoji_right = get_random_emoji_image_path(fallback_emoji="🚀")
+if 'home_link_nav_icon' not in st.session_state: st.session_state.home_link_nav_icon = get_random_emoji_image_path(subfolder="home", fallback_emoji="🏠")
+# Note: 'sidebar_header_icon' session state and its usage are removed as per your request.
 
 # === Load Environment Variables ===
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
-
-if not MONGO_URI:
-    st.error("❌ MONGO_URI is not set. Please check your .env file.")
-    st.stop()
+if not MONGO_URI: st.error("❌ MONGO_URI is not set. Please check your .env file."); st.stop()
 
 # === MongoDB Setup ===
 @st.cache_resource 
@@ -53,322 +96,261 @@ def get_mongo_client():
     try:
         client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000) 
         client.admin.command('ping') 
-        print("MongoDB connection successful!")
         return client
     except Exception as e:
         print(f"MongoDB connection failed: {e}")
         st.error(f"❌ MongoDB connection failed: {e}")
         return None
-
 mongo_client = get_mongo_client()
 if mongo_client:
-    db = mongo_client["nasa_osdr"] 
-    studies_collection = db["studies"] 
+    db = mongo_client["nasa_osdr"]; studies_collection = db["studies"] 
 else:
-    st.error("Halting app due to MongoDB connection failure.")
-    st.stop()
-
+    st.error("Halting app due to MongoDB connection failure."); st.stop()
 
 # === Sidebar ===
 with st.sidebar:
-    st.header("🚀 OSDR Explorer")
-    # Streamlit often creates a default link to the main app file.
-    # If you have a multi-page app structure (e.g., using a 'pages/' directory),
-    # st.page_link would be used for those. For a single file app, this might be redundant
-    # or you can just use st.markdown for a home-like button if needed.
-    # Let's simplify if this is the main page:
-    st.markdown("#### 🏠 Home") # Simpler home indicator if it's the main page
-    # If you later add a pages/ directory for a multi-page app:
-    # st.page_link("streamlit_main_app.py", label="🏠 Home Base", icon="🏠")
+    st.header("OSDR Explorer") # This is now the topmost item you've defined
+    
+    home_nav_icon_path = st.session_state.home_link_nav_icon
+    home_nav_label = "Home"
+    home_nav_cols = st.columns([1, 4], gap="small") 
+    with home_nav_cols[0]:
+        if isinstance(home_nav_icon_path, str) and \
+           (home_nav_icon_path.lower().endswith(VALID_IMAGE_EXTENSIONS) and \
+            os.path.exists(home_nav_icon_path)):
+            st.image(home_nav_icon_path, width=24) 
+        else:
+            st.markdown(f"<span style='font-size: 20px;'>{home_nav_icon_path}</span>", unsafe_allow_html=True)
+    with home_nav_cols[1]:
+        st.markdown(f"**{home_nav_label}**") 
+
     st.markdown("---")
     st.header("Admin Tools")
-    if st.button("🔄 Fetch & Save OSD Metadata (Admin)", key="admin_fetch_metadata"):
-        with st.spinner("Admin action: Fetching OSDs and saving metadata... (Placeholder)"):
-            try:
-                # --- THIS SECTION REQUIRES YOUR ACTUAL IMPLEMENTATION ---
-                # For now, it will show the placeholder message.
-                # Example:
-                # if 'get_all_osds' in globals() and 'save_osd_list' in globals() and 'save_all_metadata' in globals():
-                #     osds = get_all_osds()
-                #     save_osd_list(osds)
-                #     save_all_metadata(osds)
-                #     st.success(f"Fetched and saved metadata for {len(osds)} OSDs!")
-                # else:
-                #     st.warning("Admin metadata functions (get_all_osds, etc.) are not fully imported or defined.")
-                time.sleep(1) # Simulate work
-                st.info("This Admin metadata fetch functionality is a placeholder and needs to be implemented.")
-                # --- END OF SECTION REQUIRING IMPLEMENTATION ---
-            except Exception as e:
-                st.error(f"❌ Failed to execute admin metadata task: {e}")
-                # st.exception(e) # Use this for more detailed error in Streamlit UI
+    if st.button("🔄 Fetch OSD Metadata (Admin)", key="admin_fetch_metadata_btn_final_v3"): 
+        with st.spinner("Admin action... (Placeholder)"):
+            time.sleep(1); st.info("Admin metadata fetch functionality is a placeholder.")
     st.markdown("---")
-    if st.button("Clear App Cache & State", key="clear_cache_button"): # Renamed slightly
-        st.cache_data.clear()
-        st.cache_resource.clear()
+    if st.button("Clear App Cache & State", key="clear_cache_state_btn_final_v3"): 
+        st.cache_data.clear(); st.cache_resource.clear()
         keys_to_clear = ['scraping_in_progress', 'last_scrape_status_message', 
-                         'last_scrape_status_type', 'selected_study_for_kg']
-        for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.success("Application cache and session state relevant to scraping/KG view have been cleared. Consider refreshing the page.")
-        # st.experimental_rerun() # Use with caution, can cause loops if state isn't managed carefully
+                         'last_scrape_status_type', 'selected_study_for_kg',
+                         'app_title_emoji_left', 'app_title_emoji_right', 
+                         'home_link_nav_icon', # 'sidebar_header_icon' removed from this list
+                         'current_scrape_progress', 'current_scrape_progress_text',
+                         'search_triggered_by_button'] 
+        for key_to_clear in keys_to_clear:
+            if key_to_clear in st.session_state: del st.session_state[key_to_clear]
+        st.success("App cache & session state cleared. Consider refreshing.")
+        st.experimental_rerun()
 
 # === Main App Title ===
-# (Title and markdown as before - no changes needed here)
-st.title("🛰️ NASA OSDR | Knowledge Graph + Data Extractor 🚀")
-st.markdown("Explore, extract, and visualize data from NASA's Open Science Data Repository.")
+app_title_cols = st.columns([1, 8, 1], gap="small")
+with app_title_cols[0]:
+    title_emoji_left_path = st.session_state.app_title_emoji_left
+    if isinstance(title_emoji_left_path, str) and \
+       (title_emoji_left_path.lower().endswith(VALID_IMAGE_EXTENSIONS) and \
+        os.path.exists(title_emoji_left_path)):
+        st.image(title_emoji_left_path, width=50)
+    else:
+        st.markdown(f"<div style='text-align: center; font-size: 30px;'>{title_emoji_left_path}</div>", unsafe_allow_html=True)
+app_title_cols[1].title("NASA OSDR Explorer", anchor=False)
+with app_title_cols[2]:
+    title_emoji_right_path = st.session_state.app_title_emoji_right
+    if isinstance(title_emoji_right_path, str) and \
+       (title_emoji_right_path.lower().endswith(VALID_IMAGE_EXTENSIONS) and \
+        os.path.exists(title_emoji_right_path)):
+        st.image(title_emoji_right_path, width=50)
+    else:
+        st.markdown(f"<div style='text-align: center; font-size: 30px;'>{title_emoji_right_path}</div>", unsafe_allow_html=True)
+st.markdown("Extract, explore, and visualize data from NASA's Open Science Data Repository.")
 
 # === Tabs ===
-# (Tab definitions as before - no changes needed here)
-tab_names = [
-    "🧬 Data Extract & Store",
-    "🕸️ Knowledge Graph (Neo4j)",
-    "📚 Study Explorer (MongoDB)"
-]
-tab_extract, tab_kg, tab_explorer = st.tabs(tab_names)
-
+tab_names_list = ["🧬 Data Extract & Store", "🕸️ Knowledge Graph (Neo4j)", "📚 Study Explorer (MongoDB)"]
+tab_extract, tab_kg, tab_explorer = st.tabs(tab_names_list)
 
 # === Tab 1: Data Extraction & Store ===
-# (This section with st.empty() and progress bar logic is the one I provided in the previous response,
-#  and should be used as is from that response - no new changes here beyond what was already given for st.empty)
 with tab_extract:
-    st.header("Extract Study Data from NASA OSDR")
-    st.markdown("""
-        Click the button below to initiate web scraping for OSDR studies.
-        This will fetch study data using Selenium, save it to `data/osdr_studies.json`,
-        and upsert it into the MongoDB database.
-    """)
+    st.header("OSDR Study Data Extraction")
+    st.markdown("Use the button below to scrape study data from the NASA OSDR website.")
     
-    total_studies_on_site = 548 
-    studies_per_page = 25
-    # Calculate num_pages_to_scrape more safely
-    num_pages_to_scrape = (total_studies_on_site + studies_per_page - 1) // studies_per_page if total_studies_on_site > 0 else 1
+    total_studies_on_site_tab1 = 548 
+    studies_per_page_tab1 = 25
+    num_pages_to_scrape_tab1 = (total_studies_on_site_tab1 + studies_per_page_tab1 - 1) // studies_per_page_tab1 if total_studies_on_site_tab1 > 0 else 1
 
-    status_placeholder_tab1 = st.empty()
-    progress_bar_placeholder_tab1 = st.empty()
+    status_message_area = st.empty()
+    progress_area = st.empty()
 
     if not st.session_state.scraping_in_progress and st.session_state.last_scrape_status_message:
-        if st.session_state.last_scrape_status_type == "success":
-            status_placeholder_tab1.success(st.session_state.last_scrape_status_message)
-        # ... (other status types as in previous full snippet) ...
-        elif st.session_state.last_scrape_status_type == "warning":
-            status_placeholder_tab1.warning(st.session_state.last_scrape_status_message)
-        elif st.session_state.last_scrape_status_type == "error":
-            status_placeholder_tab1.error(st.session_state.last_scrape_status_message)
-        else:
-            status_placeholder_tab1.info(st.session_state.last_scrape_status_message)
-
-        if st.button("Clear Fetch Status", key="clear_fetch_status_tab1_button_v2"): # Ensure unique key
-            st.session_state.last_scrape_status_message = ""
-            status_placeholder_tab1.empty()
-            progress_bar_placeholder_tab1.empty()
+        if st.session_state.last_scrape_status_type == "success": status_message_area.success(st.session_state.last_scrape_status_message)
+        elif st.session_state.last_scrape_status_type == "warning": status_message_area.warning(st.session_state.last_scrape_status_message)
+        elif st.session_state.last_scrape_status_type == "error": status_message_area.error(st.session_state.last_scrape_status_message)
+        else: status_message_area.info(st.session_state.last_scrape_status_message)
+        if st.button("Clear Fetch Status", key="clear_fetch_status_tab1_button_final_v4_complete"): # Unique key
+            st.session_state.last_scrape_status_message = ""; status_message_area.empty(); progress_area.empty()
             st.experimental_rerun()
-    elif st.session_state.scraping_in_progress:
-         status_placeholder_tab1.info("⚙️ Scraping is currently in progress...")
+    elif st.session_state.scraping_in_progress: 
+         status_message_area.info("⚙️ Scraping is currently in progress...")
+         with progress_area.container(): 
+            st.progress(st.session_state.get('current_scrape_progress', 0), text=st.session_state.get('current_scrape_progress_text', "Scraping..."))
 
-
-    if st.button(f"🚀 Fetch All {total_studies_on_site} OSDR Studies ({num_pages_to_scrape} Pages)", 
-                 key="fetch_studies_button_main_v2",  # Ensure unique key
-                 disabled=st.session_state.scraping_in_progress):
-        
+    if st.button(f"🚀 Fetch All {total_studies_on_site_tab1} OSDR Studies ({num_pages_to_scrape_tab1} Pages)", 
+                 key="fetch_studies_main_button_final_v4_complete", disabled=st.session_state.scraping_in_progress): # Unique key
         st.session_state.scraping_in_progress = True
         st.session_state.last_scrape_status_message = "" 
-        status_placeholder_tab1.empty() 
-        progress_bar_placeholder_tab1.empty()
-        current_progress_bar = None # Initialize
-
+        status_message_area.empty(); progress_area.empty()
+        local_progress_bar = None 
         all_studies_data = []
         try:
-            with progress_bar_placeholder_tab1.container():
-                 current_progress_bar = st.progress(0, text="Starting process...")
+            with progress_area.container():
+                 st.session_state.current_scrape_progress = 0; st.session_state.current_scrape_progress_text = "Starting process..."
+                 local_progress_bar = st.progress(st.session_state.current_scrape_progress, text=st.session_state.current_scrape_progress_text)
 
-            status_placeholder_tab1.info(f"📡 Initializing Selenium... Will attempt to scrape {num_pages_to_scrape} pages.")
-            if current_progress_bar: current_progress_bar.progress(5, text="Selenium initialized. Fetching data...")
+            status_message_area.info(f"📡 Initializing Selenium... Target: {num_pages_to_scrape_tab1} pages.")
+            st.session_state.current_scrape_progress = 5
+            st.session_state.current_scrape_progress_text = "Selenium initialized. Fetching data..."
+            if local_progress_bar: local_progress_bar.progress(st.session_state.current_scrape_progress, text=st.session_state.current_scrape_progress_text)
             
-            all_studies_data = extract_study_data(max_pages_to_scrape=num_pages_to_scrape)
+            all_studies_data = extract_study_data(max_pages_to_scrape=num_pages_to_scrape_tab1)
             
             if all_studies_data:
-                status_placeholder_tab1.info(f"🔍 Scraping complete. Found {len(all_studies_data)} studies. Preparing to save...")
-                if current_progress_bar: current_progress_bar.progress(70, text=f"{len(all_studies_data)} studies scraped. Saving to JSON...")
+                st.session_state.current_scrape_progress = 70
+                st.session_state.current_scrape_progress_text = f"{len(all_studies_data)} studies scraped. Saving JSON..."
+                if local_progress_bar: local_progress_bar.progress(st.session_state.current_scrape_progress, text=st.session_state.current_scrape_progress_text)
+                status_message_area.info(f"🔍 Scraping complete. Found {len(all_studies_data)} studies. Saving to JSON...")
                 
-                data_dir = "data"
-                if not os.path.exists(data_dir):
-                    os.makedirs(data_dir)
-                
+                data_dir = "data"; 
+                if not os.path.exists(data_dir): os.makedirs(data_dir)
                 json_file_path = os.path.join(data_dir, "osdr_studies.json")
                 save_to_json(all_studies_data, json_file_path) 
-                status_placeholder_tab1.success(f"✅ All {len(all_studies_data)} studies saved to {json_file_path}")
-                if current_progress_bar: current_progress_bar.progress(85, text="Saved to JSON. Saving to MongoDB...")
                 
-                # Ensure studies_collection is the correct MongoDB collection object
-                saved_counts_details = save_to_mongo(all_studies_data, studies_collection) 
+                status_message_area.success(f"✅ All {len(all_studies_data)} studies saved to {json_file_path}")
+                st.session_state.current_scrape_progress = 85
+                st.session_state.current_scrape_progress_text = "Saved to JSON. Saving to MongoDB..."
+                if local_progress_bar: local_progress_bar.progress(st.session_state.current_scrape_progress, text=st.session_state.current_scrape_progress_text)
                 
-                msg = "Studies processed for MongoDB." 
-                if isinstance(saved_counts_details, dict): # If save_to_mongo returns a dict
-                    msg = f"MongoDB: {saved_counts_details.get('inserted',0)} inserted, {saved_counts_details.get('updated',0)} updated."
-                elif isinstance(saved_counts_details, int) : 
-                    msg = f"{saved_counts_details} studies effectively upserted/processed for MongoDB."
+                saved_counts = save_to_mongo(all_studies_data, studies_collection) 
+                
+                msg_db = "Studies processed for MongoDB." 
+                if isinstance(saved_counts, dict): msg_db = f"MongoDB: {saved_counts.get('inserted',0)} inserted, {saved_counts.get('updated',0)} updated."
+                elif isinstance(saved_counts, int) : msg_db = f"{saved_counts} studies effectively upserted/processed for MongoDB."
 
-                st.session_state.last_scrape_status_message = f"✅ All tasks complete! {msg}"
+                st.session_state.last_scrape_status_message = f"✅ All tasks complete! {msg_db}"
                 st.session_state.last_scrape_status_type = "success"
-                status_placeholder_tab1.success(st.session_state.last_scrape_status_message)
-                if current_progress_bar: current_progress_bar.progress(100, text="All operations complete!")
+                status_message_area.success(st.session_state.last_scrape_status_message)
+                st.session_state.current_scrape_progress = 100
+                st.session_state.current_scrape_progress_text = "All operations complete!"
+                if local_progress_bar: local_progress_bar.progress(st.session_state.current_scrape_progress, text=st.session_state.current_scrape_progress_text)
                 st.balloons()
             else:
-                st.session_state.last_scrape_status_message = "⚠️ No studies were extracted after attempting all pages."
+                st.session_state.last_scrape_status_message = "⚠️ No studies were extracted."
                 st.session_state.last_scrape_status_type = "warning"
-                status_placeholder_tab1.warning(st.session_state.last_scrape_status_message)
-                if current_progress_bar: current_progress_bar.progress(100, text="Extraction attempt finished with no results.")
-        
-        except Exception as e:
-            st.session_state.last_scrape_status_message = f"❌ An error occurred during data extraction: {e}"
+                status_message_area.warning(st.session_state.last_scrape_status_message)
+                if local_progress_bar: local_progress_bar.progress(100, text="Extraction attempt finished with no results.")
+        except Exception as e_extract:
+            st.session_state.last_scrape_status_message = f"❌ Error during data extraction: {e_extract}"
             st.session_state.last_scrape_status_type = "error"
-            status_placeholder_tab1.error(st.session_state.last_scrape_status_message)
+            status_message_area.error(st.session_state.last_scrape_status_message)
             st.text(traceback.format_exc())
-            if 'current_progress_bar' in locals() and current_progress_bar is not None: 
-                current_progress_bar.progress(100, text="Error occurred.")
+            if local_progress_bar is not None: 
+                local_progress_bar.progress(100, text="Error occurred.")
         finally:
             st.session_state.scraping_in_progress = False
-            st.experimental_rerun() # Rerun to update UI state after scraping finishes or errors
-
+            st.experimental_rerun() 
 
 # === Tab 2: Knowledge Graph (Neo4j) ===
-# (This section with st.session_state.selected_study_for_kg is from the previous full snippet - no new changes here)
 with tab_kg:
-    st.header("Explore Study Relationships (Neo4j)")
+    st.header("Study Knowledge Graph (Neo4j)")
     if not neo4j_enabled:
-        st.error("❌ Neo4j functionality is currently unavailable (neo4j_visualizer module not found or error).")
+        st.error("❌ Neo4j features currently disabled (neo4j_visualizer not imported).")
     else:
-        st.markdown("Visualize connections for a selected study or view a general graph.")
-        
-        selected_study_id_kg = st.session_state.get('selected_study_for_kg') # Use .get for safety
-
+        st.markdown("Visualize connections for a study selected from the 'Study Explorer' tab, or view a general graph overview.")
+        selected_study_id_kg = st.session_state.get('selected_study_for_kg')
         if selected_study_id_kg:
-            st.subheader(f"Knowledge Graph for Study: {selected_study_id_kg}")
-            with st.spinner(f"Generating graph for {selected_study_id_kg}..."):
+            st.subheader(f"Displaying Knowledge Graph for Study ID: {selected_study_id_kg}")
+            with st.spinner(f"Generating graph for {selected_study_id_kg}... Please wait."):
                 try:
-                    # This function needs to be fully implemented in neo4j_visualizer.py
-                    html_graph = build_and_display_study_graph(selected_study_id_kg) 
-                    if html_graph:
-                        st.components.v1.html(html_graph, height=650, scrolling=True)
-                    else:
-                        st.warning(f"Could not generate or display graph for {selected_study_id_kg}.")
-                except NameError: 
-                    st.error("Neo4j graph generation function (build_and_display_study_graph) is not available.")
-                except Exception as e_kg_study:
-                    st.error(f"Error generating study-specific graph: {e_kg_study}")
-                    st.text(traceback.format_exc())
-            
-            if st.button("Clear Study Graph View", key="clear_study_kg_button_tab2"): # Unique key
+                    html_graph_content = build_and_display_study_graph(selected_study_id_kg) 
+                    if html_graph_content: st.components.v1.html(html_graph_content, height=700, scrolling=True)
+                    else: st.warning(f"Could not generate graph for {selected_study_id_kg}.")
+                except NameError: st.error("Neo4j function 'build_and_display_study_graph' is not available.")
+                except Exception as e_kg_display: st.error(f"Error generating study-specific graph: {e_kg_display}"); st.text(traceback.format_exc())
+            if st.button("Clear Graph View / Select Another Study", key="clear_study_kg_button_tab2_final_v4"): # Unique key
                 st.session_state.selected_study_for_kg = None
                 st.experimental_rerun()
         else:
-            st.info("Select '👁️ View Study Knowledge Graph' for a study in the 'Study Explorer' tab to see its specific connections here.")
-            # Placeholder for general graph visualization
-            # if st.button("📊 Visualize General Neo4j Relationships", key="general_kg_button_tab2_v2"): # Unique key
-            #     st.info("General graph visualization to be implemented.")
-
+            st.info("To view a specific study's graph, select '👁️ View Study Knowledge Graph' next to a study in the 'Study Explorer (MongoDB)' tab.")
 
 # === Tab 3: Study Explorer (MongoDB) ===
-# (This section with the "View Study Knowledge Graph" button is from the previous full snippet - no new changes here)
 with tab_explorer:
-    st.header("Explore NASA OSDR Studies from MongoDB")
-    st.markdown("Filter and view studies stored in the MongoDB database.")
-
-    # Use columns for filter inputs
-    filter_col1, filter_col2, filter_col3 = st.columns([2,2,1])
-    with filter_col1:
-        organism_filter_input_exp = st.text_input("🔬 Filter by Organism", key="mongo_org_filter_explorer_input_v2", placeholder="e.g., Mus musculus")
-    with filter_col2:
-        factor_filter_input_exp = st.text_input("🧪 Filter by Factor", key="mongo_factor_filter_explorer_input_v2", placeholder="e.g., Spaceflight")
-    with filter_col3: # Column for Study ID filter
-        study_id_filter_input_exp = st.text_input("🆔 Filter by Study ID", key="mongo_study_id_filter_explorer_input_v2", placeholder="e.g., OSD-840")
-
-    # Build query
-    mongo_query_explorer_exp = {}
-    if organism_filter_input_exp:
-        mongo_query_explorer_exp["organisms"] = {"$regex": organism_filter_input_exp.strip(), "$options": "i"}
-    if factor_filter_input_exp:
-        mongo_query_explorer_exp["factors"] = {"$regex": factor_filter_input_exp.strip(), "$options": "i"}
-    if study_id_filter_input_exp:
-        # For Study ID, usually an exact match is better unless user expects partial
-        mongo_query_explorer_exp["study_id"] = {"$regex": f"^{study_id_filter_input_exp.strip()}$", "$options": "i"} # Exact match, case insensitive
-
-
-    if st.button("🔍 Search Studies in MongoDB", key="mongo_db_search_button_explorer_v2") or any(mongo_query_explorer_exp.values()):
+    st.header("Explore Studies in MongoDB")
+    st.markdown("Filter and view detailed information for studies stored in the database.")
+    filter_cols = st.columns([2, 2, 1])
+    with filter_cols[0]: organism_filter_val = st.text_input("🔬 Organism contains", key="mongo_org_filter_val_final_v4", placeholder="e.g., Mus musculus") # Unique key
+    with filter_cols[1]: factor_filter_val = st.text_input("🧪 Factor contains", key="mongo_factor_filter_val_final_v4", placeholder="e.g., Spaceflight") # Unique key
+    with filter_cols[2]: study_id_filter_val = st.text_input("🆔 Study ID is", key="mongo_study_id_filter_val_final_v4", placeholder="e.g., OSD-840") # Unique key
+    query_mongo_explorer = {}
+    if organism_filter_val: query_mongo_explorer["organisms"] = {"$regex": organism_filter_val.strip(), "$options": "i"}
+    if factor_filter_val: query_mongo_explorer["factors"] = {"$regex": factor_filter_val.strip(), "$options": "i"}
+    if study_id_filter_val: query_mongo_explorer["study_id"] = {"$regex": f"^{study_id_filter_val.strip()}$", "$options": "i"} 
+    if st.button("🔍 Search Studies", key="search_mongo_button_explorer_final_v4") or \
+       (query_mongo_explorer and not st.session_state.get('search_triggered_by_button', False)): # Unique key
+        st.session_state.search_triggered_by_button = True 
         try:
-            results_explorer = list(studies_collection.find(mongo_query_explorer_exp).limit(50)) # Limit for display
-            st.metric(label="Studies Found", value=len(results_explorer))
-
-            if not results_explorer:
-                st.info("No studies match your current filter criteria in MongoDB.")
+            if not query_mongo_explorer and not st.session_state.get('search_mongo_button_explorer_final_v4', False) : 
+                 st.info("Please enter filter criteria to search.")
             else:
-                for study_item_exp in results_explorer: 
-                    expander_title = f"{study_item_exp.get('study_id', 'N/A')}: {study_item_exp.get('title', 'No Title')}"
-                    with st.expander(expander_title):
-                        # ... (study details display as before) ...
-                        st.markdown(f"**Study ID:** {study_item_exp.get('study_id', 'N/A')}")
-                        if study_item_exp.get('study_link'):
-                            st.markdown(f"[View Study on OSDR]({study_item_exp.get('study_link')})")
-                        
-                        col_details1_exp, col_details2_exp = st.columns(2)
-                        with col_details1_exp:
-                            st.markdown(f"**Organisms:** {', '.join(study_item_exp.get('organisms', [])) if study_item_exp.get('organisms') else 'N/A'}")
-                            st.markdown(f"**Factors:** {', '.join(study_item_exp.get('factors', [])) if study_item_exp.get('factors') else 'N/A'}")
-                            st.markdown(f"**Assay Types:** {', '.join(study_item_exp.get('assay_types', [])) if study_item_exp.get('assay_types') else 'N/A'}")
-                            st.markdown(f"**Release Date:** {study_item_exp.get('release_date', 'N/A')}")
-                        
-                        with col_details2_exp:
-                            if study_item_exp.get('image_url') and "no-image-icon" not in study_item_exp.get('image_url'):
-                                st.image(study_item_exp.get('image_url'), width=100, caption="Study Image")
-                            else:
-                                st.caption("No image available")
-                        
-                        st.markdown(f"**Description:** {study_item_exp.get('description', 'N/A')}")
-                        st.markdown(f"**Highlights:** {study_item_exp.get('highlights', 'N/A')}")
-
-                        if neo4j_enabled:
-                            if st.button("👁️ View Study Knowledge Graph", key=f"kg_button_tab3_{study_item_exp.get('study_id')}_v2"): # Unique key
-                                st.session_state.selected_study_for_kg = study_item_exp.get('study_id')
-                                st.info(f"Knowledge graph for {st.session_state.selected_study_for_kg} can be viewed in the 'Knowledge Graph (Neo4j)' tab. Please navigate there.")
-                                # st.experimental_rerun() # To potentially auto-switch or update UI if needed
-                                
-        except Exception as e:
-            st.error(f"❌ MongoDB query failed: {e}")
+                results_mongo_explorer = list(studies_collection.find(query_mongo_explorer).limit(50)) 
+                st.metric(label="Studies Found", value=len(results_mongo_explorer))
+                if not results_mongo_explorer: st.warning("No studies match your filter criteria.")
+                else:
+                    for item_study in results_mongo_explorer: 
+                        exp_title = f"{item_study.get('study_id', 'N/A')}: {item_study.get('title', 'No Title')}"
+                        with st.expander(exp_title):
+                            st.markdown(f"**Study ID:** {item_study.get('study_id', 'N/A')}")
+                            if item_study.get('study_link'): st.markdown(f"[View Original Study on OSDR]({item_study.get('study_link')})")
+                            exp_col1, exp_col2 = st.columns([3,1])
+                            with exp_col1:
+                                st.markdown(f"**Organisms:** {', '.join(item_study.get('organisms', [])) if item_study.get('organisms') else 'N/A'}")
+                                st.markdown(f"**Factors:** {', '.join(item_study.get('factors', [])) if item_study.get('factors') else 'N/A'}")
+                                st.markdown(f"**Assay Types:** {', '.join(item_study.get('assay_types', [])) if item_study.get('assay_types') else 'N/A'}")
+                                st.markdown(f"**Release Date:** {item_study.get('release_date', 'N/A')}")
+                            with exp_col2:
+                                if item_study.get('image_url') and "no-image-icon" not in item_study.get('image_url'):
+                                    st.image(item_study.get('image_url'), width=120, caption="Study Image")
+                                else: st.caption("No image")
+                            st.markdown(f"**Description:** {item_study.get('description', 'N/A')}")
+                            st.markdown(f"**Highlights:** {item_study.get('highlights', 'N/A')}")
+                            if neo4j_enabled:
+                                if st.button("👁️ View Study Knowledge Graph", key=f"kg_view_button_tab3_{item_study.get('study_id')}_final_v4"): # Unique key
+                                    st.session_state.selected_study_for_kg = item_study.get('study_id')
+                                    st.success(f"Study {st.session_state.selected_study_for_kg} selected. View in 'Knowledge Graph (Neo4j)' tab.")
+        except Exception as e_mongo_explore:
+            st.error(f"❌ MongoDB query failed: {e_mongo_explore}")
             st.text(traceback.format_exc())
-    else:
-        st.info("Enter filter criteria or click search to view studies in MongoDB.")
+    elif not query_mongo_explorer: 
+        st.info("Enter filter criteria and click 'Search Studies' to explore the MongoDB data.")
+    if 'search_triggered_by_button' in st.session_state : st.session_state.search_triggered_by_button = False
 
-
-# === Optional CLI Functionality (If you want to run scraper without Streamlit) ===
-# (CLI part as before - no changes needed here from the previous full snippet)
-if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "run_scraper":
-    print("🚀 Running scraper pipeline from CLI...")
-    if not mongo_client: # Check if mongo_client was initialized
-        print("❌ MongoDB client not initialized for CLI run. Check MONGO_URI or connection.")
-    else:
-        cli_studies_collection = studies_collection # Use the collection from the main script scope
-        try:
-            num_pages_cli = (548 + 25 - 1) // 25 
-            studies_cli = extract_study_data(max_pages_to_scrape=num_pages_cli) 
-            if studies_cli:
-                data_dir_cli = "data"
-                if not os.path.exists(data_dir_cli):
-                    os.makedirs(data_dir_cli)
-                json_file_path_cli = os.path.join(data_dir_cli, "osdr_studies_cli_output.json")
-                save_to_json(studies_cli, json_file_path_cli)
-                print(f"✅ Saved {len(studies_cli)} studies to {json_file_path_cli}")
-                
-                saved_cli_counts_details = save_to_mongo(studies_cli, cli_studies_collection)
-                
-                msg_cli = "Studies processed for MongoDB from CLI."
-                if isinstance(saved_cli_counts_details, dict):
-                    msg_cli = f"MongoDB (CLI): {saved_cli_counts_details.get('inserted',0)} inserted, {saved_cli_counts_details.get('updated',0)} updated."
-                elif isinstance(saved_cli_counts_details, int) :
-                    msg_cli = f"{saved_cli_counts_details} studies effectively upserted to MongoDB from CLI run."
-                print(f"✅ {msg_cli}")
-            else:
-                print("⚠️ No studies were extracted in CLI run.")
-        except Exception as e_cli:
-            print(f"❌ Error in CLI scraper pipeline: {e_cli}")
-            traceback.print_exc()
+# === Optional CLI Functionality ===
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "run_scraper":
+        print("🚀 Running scraper pipeline from CLI...")
+        if not mongo_client: print("❌ MongoDB client not initialized for CLI run.")
+        else:
+            cli_studies_collection_ref = studies_collection 
+            try:
+                num_pages_cli_total = (548 + 25 - 1) // 25 
+                studies_from_cli = extract_study_data(max_pages_to_scrape=num_pages_cli_total) 
+                if studies_from_cli:
+                    data_dir_for_cli = "data"; 
+                    if not os.path.exists(data_dir_for_cli): os.makedirs(data_dir_for_cli)
+                    json_file_path_for_cli = os.path.join(data_dir_for_cli, "osdr_studies_cli_output.json")
+                    save_to_json(studies_from_cli, json_file_path_for_cli)
+                    print(f"✅ Saved {len(studies_from_cli)} studies to {json_file_path_for_cli}")
+                    saved_cli_counts_result = save_to_mongo(studies_from_cli, cli_studies_collection_ref)
+                    msg_for_cli_db = "Studies processed for MongoDB from CLI."
+                    if isinstance(saved_cli_counts_result, dict): msg_for_cli_db = f"MongoDB (CLI): {saved_cli_counts_result.get('inserted',0)} inserted, {saved_cli_counts_result.get('updated',0)} updated."
+                    elif isinstance(saved_cli_counts_result, int) : msg_for_cli_db = f"{saved_cli_counts_result} studies effectively upserted to MongoDB from CLI run."
+                    print(f"✅ {msg_for_cli_db}")
+                else: print("⚠️ No studies were extracted in CLI run.")
+            except Exception as e_cli_run: print(f"❌ Error in CLI scraper pipeline: {e_cli_run}"); traceback.print_exc()
