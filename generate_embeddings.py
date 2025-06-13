@@ -8,8 +8,9 @@ from vertexai.language_models import TextEmbeddingModel
 
 # --- CONFIGURATION ---
 # IMPORTANT: Replace these with your actual GCP project details.
-PROJECT_ID = "your-gcp-project-id-here"  # e.g., "nasa-osdr-hackathon"
-LOCATION = "us-central1"               # e.g., "us-central1"
+PROJECT_ID = "nasa-osdr-mongo"
+LOCATION = "us-central1"
+
 
 INPUT_JSON_PATH = "data/osdr_studies.json"
 OUTPUT_JSON_PATH = "data/osdr_studies_with_embeddings.json"

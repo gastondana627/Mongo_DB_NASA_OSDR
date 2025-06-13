@@ -3,3 +3,8 @@ __pycache__/
 .env
 data/
 .DS_Store
+
+gcp_credentials.json
+nasa-osdr-mongo-hackathon-key.json
+
+venv/
