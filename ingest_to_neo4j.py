@@ -1,9 +1,7 @@
-# ingest_to_neo4j.py (Final Simple Version)
-
+# ingest_to_neo4j.py (Definitive Version)
 import os
 import json
 from neo4j import GraphDatabase
-from neo4j.exceptions import ServiceUnavailable
 from dotenv import load_dotenv
 
 JSON_FILE_PATH = "data/osdr_studies.json"
@@ -11,9 +9,7 @@ load_dotenv()
 
 class Neo4jIngestor:
     def __init__(self):
-        uri = os.getenv("NEO4J_URI")
-        user = os.getenv("NEO4J_USER")
-        password = os.getenv("NEO4J_PASSWORD")
+        uri = os.getenv("NEO4J_URI"); user = os.getenv("NEO4J_USER"); password = os.getenv("NEO4J_PASSWORD")
         try:
             self.driver = GraphDatabase.driver(uri, auth=(user, password))
             self.driver.verify_connectivity()
@@ -30,16 +26,18 @@ class Neo4jIngestor:
             print("Clearing existing database..."); session.run("MATCH (n) DETACH DELETE n"); print("Database cleared.")
 
     def ingest_data(self):
-        if not os.path.exists(JSON_FILE_PATH): print(f"Error: JSON file not found at '{JSON_FILE_PATH}'"); return
+        if not os.path.exists(JSON_FILE_PATH):
+            print(f"Error: '{JSON_FILE_PATH}' not found. Please run the scraper in the main app first."); return
         with open(JSON_FILE_PATH, 'r') as f: study_data = json.load(f)
         with self.driver.session() as session:
-            total_studies = len(study_data); print(f"Found {total_studies} study to ingest.")
+            total = len(study_data); print(f"Found {total} studies to ingest.")
             for i, study in enumerate(study_data):
-                print(f"Ingesting study {i+1}/{total_studies}: {study.get('study_id')}")
-                session.execute_write(self._create_study_graph_tx, study)
+                print(f"Ingesting study {i+1}/{total}: {study.get('study_id')}")
+                # The **study syntax unpacks the dictionary to match the query parameters
+                session.execute_write(self._create_study_graph_tx, **study)
 
     @staticmethod
-    def _create_study_graph_tx(tx, study):
+    def _create_study_graph_tx(tx, **study):
         query = """
         MERGE (s:Study {study_id: $study_id})
         ON CREATE SET s.title = $title, s.description = $description, s.release_date = $release_date
@@ -50,9 +48,7 @@ class Neo4jIngestor:
         WITH s
         UNWIND $assay_types AS assay_name MERGE (a:Assay {name: assay_name}) MERGE (s)-[:USES_ASSAY]->(a)
         """
-        tx.run(query, study_id=study.get('study_id'), title=study.get('title'), description=study.get('description'),
-               release_date=study.get('release_date'), organisms=study.get('organisms', []),
-               factors=study.get('factors', []), assay_types=study.get('assay_types', []))
+        tx.run(query, **study)
 
 if __name__ == "__main__":
     ingestor = None
@@ -60,7 +56,7 @@ if __name__ == "__main__":
         ingestor = Neo4jIngestor()
         ingestor.clear_database()
         ingestor.ingest_data()
-        print("\nData ingestion from sample file complete!")
+        print("\nData ingestion complete!")
     except Exception:
         print(f"An operation failed.")
     finally:
