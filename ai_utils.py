@@ -2,7 +2,8 @@
 
 import os
 import vertexai
-from vertexai.generative_models import GenerativeModel, Part
+from vertexai.generative_models import GenerativeModel
+from vertexai.language_models import TextEmbeddingModel
 
 # --- CONFIGURATION ---
 PROJECT_ID = "nasa-osdr-mongo"  # Your GCP Project ID
@@ -11,22 +12,13 @@ LOCATION = "us-central1"        # The GCP region
 def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
     """
     Uses the Gemini AI model to generate a comparison between two studies.
-
-    Args:
-        study_1_details: A string containing the details of the first study.
-        study_2_details: A string containing the details of the second study.
-
-    Returns:
-        A string containing the AI-generated comparison.
     """
     print("Initializing Vertex AI for generative model...")
     vertexai.init(project=PROJECT_ID, location=LOCATION)
 
-    # Load the Gemini 1.5 Flash model, which is fast and powerful
     model = GenerativeModel("gemini-1.5-flash-001")
     print("Gemini 1.5 Flash model loaded.")
 
-    # This is the prompt that instructs the AI on how to behave
     prompt = f"""
     You are a helpful NASA science assistant. Your task is to compare two scientific studies and provide a brief, insightful summary of their relationship. Focus on their similarities and differences in terms of the factors they investigate and the organisms they use.
 
@@ -52,3 +44,46 @@ def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
         error_message = f"An error occurred while contacting the AI model: {e}"
         print(error_message)
         return error_message
+
+# --- NEW FUNCTION ADDED ---
+def perform_vector_search(query_string: str, collection, limit=10):
+    """
+    Performs a vector search on the MongoDB collection.
+    """
+    print("Initializing Vertex AI for embedding the search query...")
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    
+    model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+    print(f"Generating embedding for query: '{query_string}'")
+
+    # 1. Get the vector embedding for the user's query
+    query_embedding = model.get_embeddings([query_string])[0].values
+
+    # 2. Define the MongoDB Vector Search aggregation pipeline
+    pipeline = [
+        {
+            "$vectorSearch": {
+                "index": "vector_index",
+                "path": "text_embedding",
+                "queryVector": query_embedding,
+                "numCandidates": 200, # Number of candidates to consider
+                "limit": limit      # Number of results to return
+            }
+        },
+        {
+            # Project the fields to return, including the search score
+            "$project": {
+                "study_id": 1, "title": 1, "description": 1,
+                "organisms": 1, "factors": 1, "study_link": 1,
+                "score": { "$meta": "vectorSearchScore" }
+            }
+        }
+    ]
+
+    print("Executing vector search query in MongoDB...")
+    try:
+        results = collection.aggregate(pipeline)
+        return list(results)
+    except Exception as e:
+        print(f"An error occurred during vector search: {e}")
+        return [{"error": str(e)}]
