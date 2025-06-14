@@ -1,7 +1,11 @@
 # streamlit_main_app.py (Definitive, Complete, and Stable Version)
 
 # === Python Standard Libraries ===
-import os, sys, traceback, time, random
+import os
+import sys
+import traceback
+import time
+import random
 
 # === Third-Party Libraries ===
 import streamlit as st
@@ -17,13 +21,13 @@ from neo4j_visualizer import (
     find_similar_studies_by_organism,
     expand_second_level_connections
 )
-# Uncomment the line below after you create the ai_utils.py file
-# from ai_utils import get_ai_comparison, perform_vector_search
+from ai_utils import get_ai_comparison, perform_vector_search
 
 # === CUSTOM EMOJI HELPER FUNCTIONS ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 EMOJI_ASSETS_DIR = os.path.join(BASE_DIR, "assets", "emojis")
 VALID_IMAGE_EXTENSIONS = ('.svg', '.png', '.jpg', '.jpeg', '.gif')
+
 @st.cache_data
 def get_all_emoji_image_paths(subfolder=None):
     target_dir = EMOJI_ASSETS_DIR
@@ -31,10 +35,12 @@ def get_all_emoji_image_paths(subfolder=None):
         target_dir = os.path.join(EMOJI_ASSETS_DIR, subfolder)
     if not os.path.exists(target_dir):
         return []
-    return [os.path.join(target_dir, f) for f in os.listdir(target_dir) if f.lower().endswith(VALID_IMAGE_EXTENSIONS) and os.path.isfile(os.path.join(target_dir, f))]
+    images = [os.path.join(target_dir, f_name) for f_name in os.listdir(target_dir) if f_name.lower().endswith(VALID_IMAGE_EXTENSIONS) and os.path.isfile(os.path.join(target_dir, f_name))]
+    return images
+
 def get_random_emoji_image_path(subfolder=None, fallback_emoji="❓"):
-    paths = get_all_emoji_image_paths(subfolder=subfolder)
-    return random.choice(paths) if paths else fallback_emoji
+    image_paths = get_all_emoji_image_paths(subfolder=subfolder)
+    return random.choice(image_paths) if image_paths else fallback_emoji
 
 # === Optional: Neo4j Integration ===
 if 'build_and_display_study_graph' in globals():
@@ -64,7 +70,8 @@ if not MONGO_URI: st.error("❌ MONGO_URI not set."); st.stop()
 @st.cache_resource
 def get_mongo_client():
     try:
-        ca = certifi.where(); client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
+        ca = certifi.where()
+        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
         client.admin.command('ping'); print("MongoDB connection successful!")
         return client
     except Exception as e:
@@ -94,89 +101,70 @@ with app_title_cols[2]: st.image(st.session_state.app_title_emoji_right, width=5
 st.markdown("Extract, explore, and visualize data from NASA's Open Science Data Repository.")
 
 # === Tabs ===
-tab_extract, tab_explorer, tab_kg = st.tabs(["🧬 Data & Setup", "📚 Study Explorer", "🕸️ Knowledge Graph"])
+tab_ai_search, tab_explorer, tab_kg, tab_extract = st.tabs(["🤖 AI Semantic Search", "📚 Study Explorer (Keyword)", "🕸️ Knowledge Graph", "🧬 Data & Setup"])
 
-# === Tab 1: Data & Setup ===
-with tab_extract:
-    st.header("OSDR Data Status & Management")
-    try:
-        if 'last_scrape_status_message' in st.session_state and st.session_state.last_scrape_status_message:
-            status_type = st.session_state.get('last_scrape_status_type', 'info')
-            st.session_state.last_scrape_status_message and getattr(st, status_type)(st.session_state.last_scrape_status_message)
-
-        studies_count = studies_collection.count_documents({})
-        if studies_count > 0:
-            st.success(f"✅ Your MongoDB database is populated with **{studies_count}** studies.")
-            st.info("You are ready to explore. To re-scrape all data, use the button below.")
-            if st.button("🔄 Re-fetch All Data (will overwrite existing)", key="refetch_data_btn"):
-                st.session_state.scraping_in_progress = True; st.rerun()
+# === Tab 1: AI Semantic Search ===
+with tab_ai_search:
+    st.header("🤖 AI-Powered Semantic Search")
+    st.markdown("Ask a question in natural language to find the most conceptually related studies in the dataset.")
+    user_question = st.text_area("Enter your research question:", height=100, placeholder="e.g., What are the effects of microgravity on the cardiovascular system of mammals?")
+    if st.button("Search with AI", key="ai_search_button"):
+        if user_question:
+            with st.spinner("Searching for conceptually similar studies using Vertex AI and MongoDB..."):
+                st.session_state.ai_search_results = perform_vector_search(user_question, studies_collection)
         else:
-            st.warning("Your database is empty."); st.markdown("Use the button below to scrape all study data from the NASA OSDR website.")
-            if st.button("🚀 Fetch All OSDR Studies", key="initial_fetch_btn"):
-                st.session_state.scraping_in_progress = True; st.rerun()
-
-        if st.session_state.get('scraping_in_progress'):
-            with st.spinner("Scraping data... this will take several minutes."):
-                try:
-                    if studies_count > 0: studies_collection.delete_many({})
-                    all_studies_data = extract_study_data()
-                    if all_studies_data:
-                        save_to_json(all_studies_data, "data/osdr_studies.json")
-                        saved_counts = save_to_mongo(all_studies_data, studies_collection)
-                        msg = f"MongoDB: {saved_counts.get('inserted',0)} inserted." if isinstance(saved_counts, dict) else ""
-                        st.session_state.last_scrape_status_message = f"✅ Success! Scraped {len(all_studies_data)} studies. {msg}"
-                        st.session_state.last_scrape_status_type = "success"
-                except Exception as e:
-                    st.session_state.last_scrape_status_message = f"❌ Error: {e}"; st.session_state.last_scrape_status_type = "error"
-                finally:
-                    st.session_state.scraping_in_progress = False; st.rerun()
-    except Exception as e: st.error(f"❌ DB status check failed: {e}")
-
-# === Tab 2: Study Explorer ===
-with tab_explorer:
-    st.header("Explore Studies in MongoDB")
-    st.markdown("Filter and view detailed information for studies stored in the database.")
-    filter_cols = st.columns([2, 2, 1])
-    with filter_cols[0]: organism_filter = st.text_input("🔬 Organism contains", key="mongo_org_filter", placeholder="e.g., Mus musculus")
-    with filter_cols[1]: factor_filter = st.text_input("🧪 Factor contains", key="mongo_factor_filter", placeholder="e.g., Spaceflight")
-    with filter_cols[2]: study_id_filter = st.text_input("🆔 Study ID is", key="mongo_study_id_filter", placeholder="e.g., OSD-840")
+            st.warning("Please enter a question to search.")
+            st.session_state.ai_search_results = []
     
-    # Use a form to group search inputs and button
+    if 'ai_search_results' in st.session_state and st.session_state.ai_search_results:
+        results = st.session_state.ai_search_results
+        if "error" in results[0]:
+            st.error(f"An error occurred: {results[0]['error']}")
+        else:
+            st.success(f"Found **{len(results)}** conceptually relevant studies, sorted by relevance.")
+            for item in results:
+                with st.expander(f"**{item.get('study_id', 'N/A')}:** {item.get('title', 'No Title')} (Relevance Score: {item.get('score', 0):.4f})"):
+                    st.markdown(f"**Description:** {item.get('description', 'N/A')}")
+                    if item.get('study_link'): st.markdown(f"[View Original Study on OSDR]({item.get('study_link')})")
+                    if neo4j_enabled:
+                        if st.button("👁️ View Knowledge Graph", key=f"kg_view_ai_{item.get('study_id')}"):
+                            st.session_state.selected_study_for_kg = item.get('study_id')
+                            st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
+                            st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab to view.")
+
+# === Tab 2: Study Explorer (Keyword) ===
+with tab_explorer:
+    st.header("📚 Keyword-Based Study Explorer")
+    st.markdown("Filter and view detailed information for studies stored in the database using exact keywords.")
     with st.form(key="search_form"):
-        submitted = st.form_submit_button("🔍 Search Studies")
+        filter_cols = st.columns([2, 2, 1])
+        with filter_cols[0]: organism_filter = st.text_input("🔬 Organism contains", placeholder="e.g., Mus musculus")
+        with filter_cols[1]: factor_filter = st.text_input("🧪 Factor contains", placeholder="e.g., Spaceflight")
+        with filter_cols[2]: study_id_filter = st.text_input("🆔 Study ID is", placeholder="e.g., OSD-840")
+        submitted = st.form_submit_button("🔍 Search by Keyword")
         if submitted:
             query = {}
             if organism_filter: query["organisms"] = {"$regex": organism_filter.strip(), "$options": "i"}
             if factor_filter: query["factors"] = {"$regex": factor_filter.strip(), "$options": "i"}
             if study_id_filter: query["study_id"] = {"$regex": f"^{study_id_filter.strip()}$", "$options": "i"}
             st.session_state.mongo_query = query
+            st.session_state.search_triggered = True
 
-    if 'mongo_query' in st.session_state:
-        try:
-            results = list(studies_collection.find(st.session_state.mongo_query).limit(50))
-            st.metric(label="Studies Found", value=len(results))
-            if not results and st.session_state.mongo_query: st.warning("No studies match your filter criteria.")
-            for item in results:
-                with st.expander(f"{item.get('study_id', 'N/A')}: {item.get('title', 'No Title')}"):
-                    st.markdown(f"**Study ID:** {item.get('study_id', 'N/A')}")
-                    if item.get('study_link'): st.markdown(f"[View Original Study on OSDR]({item.get('study_link')})")
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"**Organisms:** {', '.join(item.get('organisms', []))}")
-                        st.markdown(f"**Factors:** {', '.join(item.get('factors', []))}")
-                    with col2:
-                        if item.get('image_url') and "no-image-icon" not in item.get('image_url'):
-                            st.image(item.get('image_url'), width=120)
-                    if neo4j_enabled:
-                        if st.button("👁️ View Knowledge Graph", key=f"kg_view_btn_{item.get('study_id')}"):
-                            st.session_state.selected_study_for_kg = item.get('study_id')
-                            st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
-                            st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab.")
-        except Exception as e: st.error(f"❌ MongoDB query failed: {e}")
+    if st.session_state.get('search_triggered'):
+        results = list(studies_collection.find(st.session_state.get('mongo_query', {})).limit(50))
+        st.metric(label="Studies Found", value=len(results))
+        if not results and st.session_state.mongo_query: st.warning("No studies match your filter criteria.")
+        for item in results:
+            with st.expander(f"{item.get('study_id', 'N/A')}: {item.get('title', 'No Title')}"):
+                st.markdown(f"**Description:** {item.get('description', 'N/A')}")
+                if st.button("👁️ View Knowledge Graph", key=f"kg_view_kw_{item.get('study_id')}"):
+                    st.session_state.selected_study_for_kg = item.get('study_id')
+                    st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
+                    st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab.")
 
 # === Tab 3: Knowledge Graph ===
 with tab_kg:
-    st.header("Study Knowledge Graph (Neo4j)")
+    st.header("🕸️ Study Knowledge Graph")
     if not neo4j_enabled: st.error("❌ Neo4j features currently disabled.")
     else:
         selected_study_id = st.session_state.get('selected_study_for_kg')
@@ -187,7 +175,6 @@ with tab_kg:
                     st.session_state.graph_html, st.session_state.kg_study_ids = html, ids
             st.subheader(f"Displaying Graph for: {', '.join(st.session_state.kg_study_ids)}")
             if st.session_state.graph_html: st.components.v1.html(st.session_state.graph_html, height=750, scrolling=True)
-            
             st.markdown("---"); st.subheader("Interactive Queries")
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -208,18 +195,57 @@ with tab_kg:
                         html, ids = build_and_display_study_graph(selected_study_id)
                         st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
                     st.rerun()
-
-            st.markdown("---"); st.subheader("🤖 AI-Powered Analysis (Placeholder)")
-            # This logic will be fully implemented when ai_utils.py is added
-            st.info("The AI feature to compare studies will be implemented here.")
-
+            st.markdown("---"); st.subheader("🤖 AI-Powered Analysis")
+            if len(st.session_state.kg_study_ids) == 2:
+                if st.button(f"Compare {st.session_state.kg_study_ids[0]} & {st.session_state.kg_study_ids[1]} with AI"):
+                    with st.spinner("🛰️ Calling Google Gemini to analyze..."):
+                        docs = list(studies_collection.find({"study_id": {"$in": st.session_state.kg_study_ids}}))
+                        if len(docs) == 2:
+                            d1 = f"ID: {docs[0].get('study_id')}, Title: {docs[0].get('title')}, Desc: {docs[0].get('description')}"
+                            d2 = f"ID: {docs[1].get('study_id')}, Title: {docs[1].get('title')}, Desc: {docs[1].get('description')}"
+                            st.session_state.ai_comparison_text = get_ai_comparison(d1, d2)
+                        else: st.session_state.ai_comparison_text = "Error: Could not retrieve details for both studies."
+                    st.rerun()
+            if st.session_state.ai_comparison_text:
+                st.info("🤖 Gemini Analysis:"); st.markdown(st.session_state.ai_comparison_text)
             st.markdown("---")
             if st.button("Clear Graph View"):
-                st.session_state.selected_study_for_kg, st.session_state.graph_html = None, None
-                st.session_state.kg_study_ids, st.session_state.ai_comparison_text = [], None
+                st.session_state.selected_study_for_kg, st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, None, [], None
                 st.rerun()
+        else: st.info("To view a graph, find one using the search tabs.")
+
+# === Tab 4: Data & Setup ===
+with tab_extract:
+    st.header("🧬 OSDR Data Status & Management")
+    try:
+        if st.session_state.last_scrape_status_message:
+            status_type = st.session_state.get('last_scrape_status_type', 'info')
+            getattr(st, status_type)(st.session_state.last_scrape_status_message)
+        studies_count = studies_collection.count_documents({})
+        if studies_count > 0:
+            st.success(f"✅ Your MongoDB database is populated with **{studies_count}** studies.")
+            if st.button("🔄 Re-fetch All Data (will overwrite existing)", key="refetch_data_btn"):
+                st.session_state.scraping_in_progress = True; st.rerun()
         else:
-            st.info("To view a graph, select a study in the 'Study Explorer' tab.")
+            st.warning("Your database is empty."); st.markdown("Use the button below to scrape all study data.")
+            if st.button("🚀 Fetch All OSDR Studies", key="initial_fetch_btn"):
+                st.session_state.scraping_in_progress = True; st.rerun()
+        if st.session_state.get('scraping_in_progress'):
+            with st.spinner("Scraping data... this will take several minutes."):
+                try:
+                    if studies_count > 0: studies_collection.delete_many({})
+                    all_studies_data = extract_study_data()
+                    if all_studies_data:
+                        save_to_json(all_studies_data, "data/osdr_studies.json")
+                        saved_counts = save_to_mongo(all_studies_data, studies_collection)
+                        msg = f"MongoDB: {saved_counts.get('inserted',0)} inserted." if isinstance(saved_counts, dict) else ""
+                        st.session_state.last_scrape_status_message = f"✅ Success! Scraped {len(all_studies_data)} studies. {msg}"
+                        st.session_state.last_scrape_status_type = "success"
+                except Exception as e:
+                    st.session_state.last_scrape_status_message = f"❌ Error: {e}"; st.session_state.last_scrape_status_type = "error"
+                finally:
+                    st.session_state.scraping_in_progress = False; st.rerun()
+    except Exception as e: st.error(f"❌ DB status check failed: {e}")
 
 # === Optional CLI Functionality ===
 if __name__ == "__main__":
@@ -238,3 +264,4 @@ if __name__ == "__main__":
                     print("⚠️ No studies were extracted in CLI run.")
             except Exception as e:
                 print(f"❌ Error in CLI scraper pipeline: {e}"); traceback.print_exc()
+
