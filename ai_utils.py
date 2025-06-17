@@ -6,6 +6,8 @@ from pymongo import MongoClient
 
 # --- CONFIGURATION ---
 if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    # This line is mainly for local testing. On Streamlit Cloud, the credentials
+    # will be set by the helper function in the main app.
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./gcp_credentials.json"
 
 PROJECT_ID = "nasa-osdr-mongo"  # Your GCP Project ID
@@ -90,6 +92,47 @@ def perform_vector_search(query_string: str, collection, limit=10):
         print(f"An error occurred during vector search: {e}")
         return [{"error": str(e)}]
 
+# ==============================================================================
+# === NEW AI SUMMARY FUNCTION (ADD THIS) ===
+# ==============================================================================
+def get_ai_summary(question, search_results):
+    """
+    Generates a 1-2 sentence summary from search results using Gemini.
+    """
+    print("Initializing Vertex AI for summary generation...")
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    
+    model = GenerativeModel("gemini-1.5-flash-001")
+
+    # Create a concise context from the top 3 search results
+    top_results = search_results[:3]
+    context = ""
+    for result in top_results:
+        context += f"Title: {result.get('title', 'N/A')}\\nDescription: {result.get('description', 'N/A')}\\n\\n"
+
+    prompt = f"""
+    Based on the following search results for the user's question, provide a concise 1-2 sentence summary of the findings.
+
+    User's Question: "{question}"
+
+    Search Results Context:
+    {context}
+
+    Summary:
+    """
+
+    try:
+        print("Sending request to Gemini for summary...")
+        response = model.generate_content(prompt)
+        print("Received summary from Gemini.")
+        return response.text
+    except Exception as e:
+        error_message = f"An error occurred while generating the summary: {e}"
+        print(error_message)
+        return error_message
+# ==============================================================================
+
+
 # --- TEST HARNESS ---
 if __name__ == "__main__":
     # Test Gemini comparison
@@ -100,12 +143,18 @@ if __name__ == "__main__":
     # Optional: test MongoDB vector search
     print("\n--- VECTOR SEARCH TEST ---")
     try:
-        client = MongoClient("mongodb://localhost:27017")  # or use your MongoDB URI
-        db = client["nasa_osdr"]
-        collection = db["studies"]
-        query = "Effects of microgravity on cognitive performance"
-        results = perform_vector_search(query, collection)
-        for r in results:
-            print(r)
+        # NOTE: This test requires a local MongoDB connection or a valid URI in your environment
+        # client = MongoClient("your_mongo_uri")
+        # db = client["nasa_osdr"]
+        # collection = db["studies"]
+        # query = "Effects of microgravity on cognitive performance"
+        # results = perform_vector_search(query, collection)
+        # for r in results:
+        #     print(r)
+        print("Skipping vector search test. Set MongoDB URI to run.")
     except Exception as db_error:
         print(f"Database connection failed: {db_error}")
+
+
+
+
