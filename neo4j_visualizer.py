@@ -1,13 +1,10 @@
-# neo4j_visualizer.py (Definitive Upgraded & Corrected Version)
+# neo4j_visualizer.py (Definitive Upgraded & Corrected Version for Streamlit Cloud)
 
-import os
+import streamlit as st
 from neo4j import GraphDatabase
-from dotenv import load_dotenv
 from pyvis.network import Network
-import html
 
-load_dotenv()
-URI = os.getenv("NEO4J_URI"); USER = os.getenv("NEO4J_USER"); PASSWORD = os.getenv("NEO4J_PASSWORD")
+# The old os.getenv and load_dotenv lines are removed as we will get secrets from st.secrets
 
 def _build_graph_from_records(records):
     """A generic helper to build a Pyvis graph from Neo4j query results."""
@@ -50,14 +47,27 @@ def _build_graph_from_records(records):
     return net.generate_html(), list(study_ids_in_graph)
 
 def run_graph_query(query: str, params: dict = None):
-    """A generic function to securely run any query and return its data."""
+    """
+    A generic function to securely run any query and return its data.
+    This version reads credentials directly from Streamlit's secrets manager.
+    """
     driver = None
     try:
-        driver = GraphDatabase.driver(URI, auth=(USER, PASSWORD)); driver.verify_connectivity()
+        # Get credentials from Streamlit secrets instead of .env file
+        uri = st.secrets["NEO4J_URI"]
+        user = st.secrets["NEO4J_USER"]
+        password = st.secrets["NEO4J_PASSWORD"]
+
+        # Establish connection with the retrieved secrets
+        driver = GraphDatabase.driver(uri, auth=(user, password))
+        driver.verify_connectivity()
         with driver.session() as session:
             return session.run(query, parameters=params).data()
     except Exception as e:
-        return [{"error": f"An unexpected error occurred: {e}"}]
+        # Return a more specific error message if secrets are missing
+        if "AttributeError" in str(e) or "KeyError" in str(e):
+             return [{"error": "Neo4j credentials not found in Streamlit Secrets. Please check your deployment settings."}]
+        return [{"error": f"An unexpected error occurred connecting to Neo4j: {e}"}]
     finally:
         if driver: driver.close()
 
@@ -66,7 +76,8 @@ def build_and_display_study_graph(study_id: str):
     query = "MATCH (study:Study {study_id: $study_id})-[r]-(neighbor) RETURN properties(study) as study_props, labels(neighbor) as neighbor_labels, properties(neighbor) as neighbor_props"
     records = run_graph_query(query, {'study_id': study_id})
     if not records or ("error" in records[0] and records[0].get("error")):
-        return (f"<h3>No graph data found for study {study_id}.</h3>", [])
+        error_message = records[0].get("error") if records else f"No graph data found for study {study_id}."
+        return (f"<h3>{error_message}</h3>", [])
     return _build_graph_from_records(records)
 
 def find_similar_studies_by_organism(study_id: str):
@@ -74,7 +85,10 @@ def find_similar_studies_by_organism(study_id: str):
     query = "MATCH (start:Study {study_id: $study_id})-[:HAS_ORGANISM]->(o:Organism)<-[:HAS_ORGANISM]-(similar:Study) WHERE start <> similar RETURN properties(start) as start, properties(o) as organism, properties(similar) as similar, labels(o) as organism_labels LIMIT 1"
     records = run_graph_query(query, {'study_id': study_id})
     if not records or ("error" in records[0] and records[0].get("error")):
-        return ("<h3>No other studies found sharing the same organism.</h3>", [study_id])
+        error_message = records[0].get("error") if records else "No other studies found sharing the same organism."
+        # Still return the base graph if no similar studies are found
+        base_html, _ = build_and_display_study_graph(study_id)
+        return (f"{base_html}<h3>{error_message}</h3>", [study_id])
     return _build_graph_from_records(records)
 
 def expand_second_level_connections(study_id: str):
@@ -89,5 +103,13 @@ def expand_second_level_connections(study_id: str):
     """
     records = run_graph_query(query, {'study_id': study_id})
     if not records or ("error" in records[0] and records[0].get("error")):
-        return ("<h3>No second-level connections found.</h3>", [study_id])
+        error_message = records[0].get("error") if records else "No second-level connections found."
+        return (f"<h3>{error_message}</h3>", [study_id])
     return _build_graph_from_records(records)
+
+
+
+
+
+
+
