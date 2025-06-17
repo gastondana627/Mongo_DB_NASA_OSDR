@@ -1,131 +1,111 @@
-# NASA OSDR Data Extractor & Knowledge Graph Explorer
+
+# NASA OSDR AI Explorer
 
 ## 🚀 Project Overview
 
-This project is a Python-based application designed to extract research study data from the NASA Open Science Data Repository (OSDR), store it, and provide tools for exploration and (planned) knowledge graph visualization. It utilizes Selenium for web scraping, MongoDB for data persistence, and Streamlit for the user interface. The eventual goal is to build a knowledge graph using Neo4j to uncover relationships within the OSDR data.
+The **NASA OSDR AI Explorer** is a cloud-native web application designed to unlock novel insights from NASA's Open Science Data Repository (OSDR). The project addresses the challenge of navigating vast and complex scientific datasets by transforming flat research data into an intuitive, multi-faceted exploration tool. It leverages a sophisticated architecture combining multiple databases, a containerized deployment, and a powerful AI-driven search and analysis engine built on Google Cloud's Vertex AI.
 
-**Current Status:** Successfully scrapes approximately 548 studies across ~22 pages from the NASA OSDR website, extracting detailed information for each study. Data is saved to a local JSON file and upserted into a MongoDB database. The Streamlit application allows users to trigger the data extraction process and explore the stored MongoDB data with basic filters.
+The application allows users to find data through traditional keyword filters or through a powerful **AI-powered semantic search**, which understands natural language questions. It provides a unique **knowledge graph visualization** using Neo4j to visually map the intricate relationships between studies, organisms, and research factors. Furthermore, users can select related studies from the graph and receive an **AI-generated summary** comparing their similarities and differences, powered by Google's Gemini model.
 
-## ✨ Features Implemented
+**Live Deployed Application:** 
 
-* **Web Scraping:**
-    * Uses Selenium and ChromeDriver to navigate the dynamic NASA OSDR website.
-    * Implements multi-page pagination by interacting with "Next page" elements.
-    * Extracts key data fields per study: Study ID, Title, Study Link, Image URL, Organisms, Factors, Assay Types, Release Date, Description, and Highlights.
-* **Data Storage:**
-    * Saves all extracted study data into a structured JSON file (`data/osdr_studies.json`).
-    * Upserts (updates or inserts) study data into a MongoDB collection (`nasa_osdr.studies`), using `study_id` as the unique identifier.
-* **Streamlit Web Application:**
-    * **Data Extract & Store Tab:** Allows users to initiate the full data scraping process with UI feedback (progress messages, status updates using `st.empty()`).
-    * **Study Explorer (MongoDB) Tab:** Enables users to browse and filter the studies stored in MongoDB by Organism, Factor, or Study ID. Displays detailed information for each study in an expandable view.
-    * **Knowledge Graph (Neo4j) Tab (Placeholder):** UI elements and session state logic are in place to eventually display study-specific knowledge graphs and general graph overviews from a Neo4j database.
-* **Environment Configuration:** Uses a `.env` file for managing sensitive information like the MongoDB URI.
+## ✨ Core Features
+
+* **AI Semantic Search:** Ask complex, natural language questions (e.g., *"What do we know about muscle atrophy in rodents during spaceflight?"*) and receive conceptually relevant studies, sorted by relevance.
+* **Interactive Knowledge Graph:** Select any study to instantly visualize its connections to organisms, experimental factors, and assay types in a dynamic, explorable graph.
+* **AI-Powered Comparison:** Select two related studies from the knowledge graph and receive an instant, AI-generated summary explaining their scientific relationship, similarities, and differences.
+* **Cloud-Native & Deployed:** The entire application is containerized with Docker and deployed on **Google Cloud Run**, making it publicly accessible, scalable, and secure.
+* **Multi-Database Architecture:** Utilizes MongoDB Atlas for robust data storage and Neo4j AuraDB for high-performance graph relationship queries.
 
 ## 🛠️ Tech Stack
 
-* **Programming Language:** Python 3.12 (or your version)
-* **Web Scraping:** Selenium, ChromeDriver
-* **HTML Parsing (Helper):** BeautifulSoup4
+* **Programming Language:** Python
 * **Web Application Framework:** Streamlit
-* **Database:** MongoDB (using Pymongo driver)
-* **Planned Graph Database:** Neo4j (using `neo4j-driver`)
-* **Environment Management:** `python-dotenv`
-* **Standard Libraries:** `os`, `json`, `time`, `sys`, `traceback`
+* **AI & Machine Learning:** Google Cloud Vertex AI (Embeddings API & Gemini 1.5 Flash)
+* **Deployment:** Docker, Google Cloud Run, Google Artifact Registry
+* **Databases:**
+    * **MongoDB Atlas** (with Vector Search) for primary data and vector storage.
+    * **Neo4j AuraDB** for graph data modeling and visualization.
+* **Security:** Google Secret Manager for secure credential handling.
+* **DevOps:** Git & GitLab for source code management.
 
-## ⚙️ Setup and Installation
+## ⚙️ Cloud Architecture
 
-1.  **Clone the Repository:**
+The application is fully cloud-native, leveraging a modern, scalable architecture:
+1.  A **Python scraper** using Selenium extracts data from the NASA OSDR.
+2.  The data is processed by a script using the **Vertex AI Embeddings API** to generate semantic vectors.
+3.  The enriched data is stored in **MongoDB Atlas** and indexed for vector search. Relational data is loaded into **Neo4j AuraDB**.
+4.  The Streamlit application is containerized using **Docker** and its image is stored in **Google Artifact Registry**.
+5.  The container is deployed as a service on **Google Cloud Run**, which automatically handles scaling and traffic.
+6.  The deployed service securely accesses database credentials and API keys at runtime from **Google Secret Manager**.
+
+## ▶️ How to Run the Application
+
+### Admin / Developer Setup (Local)
+
+This covers the complete process of setting up the project from scratch on a local machine.
+
+1.  **Prerequisites:** Ensure you have Python 3.10+, Git, Docker Desktop, and the `gcloud` CLI installed and authenticated.
+2.  **Clone Repository:**
     ```bash
-    git clone [GASTONDANA627]/[ttps://github.com/gastondana627/Mongo_DB_NASA_OSDR.git
-    cd Mongo_DB_NASA_OSDR
+    git clone [Your-GitLab-Repo-URL]
+    cd [Your-Repo-Name]
     ```
-2.  **Create a Python Virtual Environment (Recommended):**
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows: venv\Scripts\activate
-    ```
-3.  **Install Dependencies:**
-    Create a `requirements.txt` file (see contents below) and run:
-    ```bash
-    pip install -r requirements.txt
-    ```
-4.  **Install ChromeDriver:**
-    * Download the ChromeDriver executable that matches your installed Google Chrome browser version from [https://chromedriver.chromium.org/downloads](https://chromedriver.chromium.org/downloads).
-    * Ensure ChromeDriver is in your system's PATH or place it in the project's root directory (the script currently expects it to be in PATH).
-5.  **Setup MongoDB:**
-    * Install MongoDB Community Server from [https://www.mongodb.com/try/download/community](https://www.mongodb.com/try/download/community) or use Docker.
-    * Ensure your MongoDB server is running (usually on `localhost:27017`).
-6.  **Create `.env` File:**
-    * In the project's root directory, create a file named `.env`.
-    * Add your MongoDB connection URI:
+3.  **Setup Environment:**
+    * Create and activate a Python virtual environment:
+        ```bash
+        python3 -m venv venv
+        source venv/bin/activate  # On Windows: venv\Scripts\activate
         ```
-        MONGO_URI="mongodb://localhost:27017/"
+    * Install all required libraries:
+        ```bash
+        pip install -r requirements.txt
         ```
-        (Adjust if your MongoDB setup is different).
-7.  **(Future) Setup Neo4j:**
-    * Install Neo4j Desktop or Server from [https://neo4j.com/download/](https://neo4j.com/download/).
-    * Ensure the Neo4j server is running.
-    * You will need to configure connection details (URI, user, password) likely in your `.env` file or directly in the Neo4j connection script for the knowledge graph features.
+4.  **Configure Credentials:**
+    * Create a `.env` file in the root directory.
+    * Add your cloud `MONGO_URI`, `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD` to this file.
+    * Place your `gcp_credentials.json` file in the root directory.
+5.  **Start Databases:**
+    * Ensure your MongoDB Atlas and Neo4j AuraDB clusters are active.
+6.  **Run the Full Data Pipeline:**
+    * **Step A (Scrape & Load MongoDB):** Launch the Streamlit app (`streamlit run streamlit_main_app.py`). Go to the "Data & Setup" tab and click the "Fetch All... Studies" button. Wait for it to complete.
+    * **Step B (Load Neo4j):** Run the ingestion script from your terminal: `python3 ingest_to_neo4j.py`.
+    * **Step C (Generate AI Embeddings):** Run the embedding script: `python3 generate_embeddings.py`.
+    * **Step D (Update MongoDB with Embeddings):** Run the update script: `python3 update_mongo_with_embeddings.py`.
+7.  **Run the Application Locally:**
+    * Launch the fully populated application: `streamlit run streamlit_main_app.py`.
 
-## ▶️ How to Run
+### End-User Experience (Live Deployed App)
 
-1.  **Start your MongoDB server** if it's not already running.
-2.  **(Future) Start your Neo4j server** if you are working on the knowledge graph features.
-3.  **Activate your Python virtual environment:**
-    ```bash
-    source venv/bin/activate  # Or venv\Scripts\activate on Windows
-    ```
-4.  **Run the Streamlit Application:**
-    ```bash
-    streamlit run streamlit_main_app.py
-    ```
-    The application should open in your web browser.
+1.  **Access the App:** Open a web browser and navigate to the public URL provided by Google Cloud Run.
+2.  **Explore the Tabs:**
+    * **🤖 AI Semantic Search:** The primary way to interact with the data. Ask a natural language question to find the most relevant studies.
+    * **📚 Study Explorer (Keyword):** A tool for precise, keyword-based searches.
+    * **🕸️ Knowledge Graph:** A visual exploration tool. Select a study from one of the search tabs to view its connections here. Use the interactive buttons to discover new relationships.
 
-5.  **Using the Application:**
-    * **Data Extract & Store Tab:** Click the "Fetch All OSDR Studies" button to begin scraping. Monitor the progress in the UI and terminal.
-    * **Study Explorer (MongoDB) Tab:** Use the filter inputs (Organism, Factor, Study ID) to search and explore the studies stored in MongoDB. Click on a study to expand its details.
-    * **Knowledge Graph (Neo4j) Tab:** (Placeholder) Will display graph visualizations once implemented.
+## 📂 Project Structure
 
-## 📂 Project Structure (Simplified)
-MONGO_DB_NASA_OSDR/
-├── scraper/
-│   ├── init.py
-│   ├── formatter.py        # Main Selenium web scraping logic
-│   ├── utils.py            # Utility functions (save_to_json, save_to_mongo)
-│   ├── get_osds.py         # (User-defined placeholder for OSD list logic)
-│   └── save_osd_list.py    # (User-defined placeholder)
-├── data/
-│   └── osdr_studies.json   # Output of the scraper
-├── streamlit_main_app.py   # Main Streamlit application file
-├── neo4j_visualizer.py     # (Planned: for Neo4j functions)
-├── save_all_metadata.py    # (User-defined placeholder)
-├── .env                    # Local environment variables (MONGO_URI, etc. - NOT COMMITTED)
-├── .gitignore              # Specifies intentionally untracked files (e.g., .env, pycache)
-└── README.md               # This file
-└── requirements.txt        # Python dependencies
+```
+[Your-Repo-Name]/
+├── scraper/              # Contains all web scraping logic
+├── assets/               # UI images and icons
+├── data/                 # Output for scraped JSON files
+├── ai_utils.py           # Functions for calling Google Vertex AI APIs
+├── neo4j_visualizer.py   # Functions for building Neo4j graphs
+├── ingest_to_neo4j.py    # Script to populate the Neo4j database
+├── generate_embeddings.py# Script to generate AI embeddings
+├── update_mongo_with_embeddings.py # Script to update MongoDB with vectors
+├── streamlit_main_app.py # The main Streamlit application file
+├── Dockerfile            # The recipe to build the production container
+├── requirements.txt      # Python dependencies
+└── .env                  # Local environment variables (NOT COMMITTED)
+```
 
+## ⏭️ Future Work
 
-
-
-
-
-## ⏭️ Next Steps / Future Work
-
-* **Refine "Highlights" Parsing:** Ensure consistent extraction if HTML structure varies.
-* **Robust "Next Page" Button Detection:** Further verify and solidify the selector and disabled state check for the paginator's "Next Page" button.
-* **"Invalid Session ID" Error:** Monitor and troubleshoot if it reappears during very long scraping sessions.
-* **Full Neo4j Integration:**
-    * Design and implement the graph data model.
-    * Develop scripts to ingest data from MongoDB/JSON into Neo4j.
-    * Implement Cypher queries for fetching graph data.
-    * Visualize the graphs in the Streamlit application.
-* **Enhanced UI/UX:** Add more advanced filtering, sorting, and data visualization options in the Streamlit app.
-* **Error Handling & Logging:** Implement more comprehensive error handling and logging throughout the application.
-* **Deployment:** Explore options for deploying the Streamlit application (e.g., Streamlit Community Cloud).
-
-## 📄 License
-
-(MIT License)
+* **CI/CD Pipeline:** Implement a full CI/CD pipeline using GitLab to automatically build, test, and deploy the application on every push to the main branch.
+* **User Accounts:** Integrate Firebase Authentication to allow users to save their research sessions, favorite studies, and store AI-generated insights.
+* **Advanced Analytics:** Use Google BigQuery and Looker Studio to create and embed high-level dashboards analyzing trends across the entire dataset.
 
 ---
-This project was developed by Gaston D./GASTONDANA627
+This project was developed by Gaston D. / GASTONDANA627 for the **AI in Action Hackathon by Google Cloud and MongoDB**.

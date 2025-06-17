@@ -1,16 +1,10 @@
-# requirements.txt
 streamlit
 python-dotenv
 pymongo[srv]
 certifi
 neo4j
 pyvis
-selenium
 google-cloud-aiplatform
 beautifulsoup4
-urllib3==1.26.18
-gunicorn
-
-
-
+urllib3<2.0
 

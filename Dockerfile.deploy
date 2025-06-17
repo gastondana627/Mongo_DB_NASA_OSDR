@@ -1,0 +1,11 @@
+# Dockerfile.deploy
+FROM python:3.12-slim
+WORKDIR /app
+
+# Uses your preferred filename
+COPY requirements-deploy.txt .
+
+RUN pip install --no-cache-dir -r requirements-deploy.txt
+COPY . .
+EXPOSE 8080
+CMD ["streamlit", "run", "streamlit_main_app.py", "--server.port=8080", "--server.address=0.0.0.0"]

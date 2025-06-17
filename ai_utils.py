@@ -1,14 +1,17 @@
-# ai_utils.py
-
 import os
 import vertexai
 from vertexai.generative_models import GenerativeModel
 from vertexai.language_models import TextEmbeddingModel
+from pymongo import MongoClient
 
 # --- CONFIGURATION ---
+if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./gcp_credentials.json"
+
 PROJECT_ID = "nasa-osdr-mongo"  # Your GCP Project ID
 LOCATION = "us-central1"        # The GCP region
 
+# --- GENERATIVE COMPARISON FUNCTION ---
 def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
     """
     Uses the Gemini AI model to generate a comparison between two studies.
@@ -45,14 +48,14 @@ def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
         print(error_message)
         return error_message
 
-# --- NEW FUNCTION ADDED ---
+# --- VECTOR SEARCH FUNCTION ---
 def perform_vector_search(query_string: str, collection, limit=10):
     """
     Performs a vector search on the MongoDB collection.
     """
     print("Initializing Vertex AI for embedding the search query...")
     vertexai.init(project=PROJECT_ID, location=LOCATION)
-    
+
     model = TextEmbeddingModel.from_pretrained("text-embedding-004")
     print(f"Generating embedding for query: '{query_string}'")
 
@@ -66,12 +69,11 @@ def perform_vector_search(query_string: str, collection, limit=10):
                 "index": "vector_index",
                 "path": "text_embedding",
                 "queryVector": query_embedding,
-                "numCandidates": 200, # Number of candidates to consider
-                "limit": limit      # Number of results to return
+                "numCandidates": 200,
+                "limit": limit
             }
         },
         {
-            # Project the fields to return, including the search score
             "$project": {
                 "study_id": 1, "title": 1, "description": 1,
                 "organisms": 1, "factors": 1, "study_link": 1,
@@ -87,3 +89,23 @@ def perform_vector_search(query_string: str, collection, limit=10):
     except Exception as e:
         print(f"An error occurred during vector search: {e}")
         return [{"error": str(e)}]
+
+# --- TEST HARNESS ---
+if __name__ == "__main__":
+    # Test Gemini comparison
+    print("\n--- GEMINI COMPARISON TEST ---")
+    comparison = get_ai_comparison("Study on mouse genetics", "Experiment on fruit fly behavior")
+    print(comparison)
+
+    # Optional: test MongoDB vector search
+    print("\n--- VECTOR SEARCH TEST ---")
+    try:
+        client = MongoClient("mongodb://localhost:27017")  # or use your MongoDB URI
+        db = client["nasa_osdr"]
+        collection = db["studies"]
+        query = "Effects of microgravity on cognitive performance"
+        results = perform_vector_search(query, collection)
+        for r in results:
+            print(r)
+    except Exception as db_error:
+        print(f"Database connection failed: {db_error}")

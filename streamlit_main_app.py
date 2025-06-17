@@ -1,4 +1,4 @@
-# streamlit_main_app.py (Definitive, Complete, and Stable Version)
+# streamlit_main_app.py (Definitive Version with Full AI Integration & Streamlit Cloud Compatibility)
 
 # === Python Standard Libraries ===
 import os
@@ -6,10 +6,13 @@ import sys
 import traceback
 import time
 import random
+import json
+from tempfile import NamedTemporaryFile
 
 # === Third-Party Libraries ===
 import streamlit as st
-from dotenv import load_dotenv
+# load_dotenv is no longer needed for Streamlit Cloud deployment
+# from dotenv import load_dotenv
 from pymongo import MongoClient
 import certifi
 
@@ -22,6 +25,62 @@ from neo4j_visualizer import (
     expand_second_level_connections
 )
 from ai_utils import get_ai_comparison, perform_vector_search
+
+# ==============================================================================
+# === STREAMLIT CLOUD SECRETS INTEGRATION (CRITICAL FOR DEPLOYMENT) ===
+# ==============================================================================
+
+def configure_gcp_creds():
+    """
+    Handles GCP credentials for Streamlit Cloud deployment.
+    It reads the JSON key content from st.secrets, writes it to a temporary
+    file, and sets the GOOGLE_APPLICATION_CREDENTIALS environment variable
+    to point to that file.
+    """
+    # Check if we are running on Streamlit Cloud and the secret is set
+    if hasattr(st, 'secrets') and "GOOGLE_APPLICATION_CREDENTIALS_CONTENT" in st.secrets:
+        # Get the JSON content from secrets
+        creds_content_str = st.secrets["GOOGLE_APPLICATION_CREDENTIALS_CONTENT"]
+        
+        # Load the string as a JSON object
+        creds_json = json.loads(creds_content_str)
+        
+        # Write the JSON object to a temporary file
+        with NamedTemporaryFile(mode="w", delete=False, suffix=".json") as tmp:
+            json.dump(creds_json, tmp)
+            tmp_path = tmp.name
+
+        # Set the environment variable for Google Cloud libraries
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = tmp_path
+
+# Call the function to configure credentials at the start of the app
+configure_gcp_creds()
+
+@st.cache_resource
+def get_mongo_client():
+    """
+    Establishes a connection to MongoDB using credentials from st.secrets.
+    """
+    try:
+        # Get the MongoDB URI from Streamlit's secrets manager
+        mongo_uri = st.secrets.get("MONGO_URI")
+        if not mongo_uri:
+            st.error("❌ MONGO_URI secret not found. Please set it in your Streamlit Cloud app settings.")
+            return None
+
+        ca = certifi.where()
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
+        # The ismaster command is cheap and does not require auth.
+        client.admin.command('ismaster')
+        print("MongoDB connection successful!")
+        return client
+    except Exception as e:
+        st.error(f"❌ MongoDB connection failed: {e}")
+        return None
+
+# ==============================================================================
+# === END OF SECRETS INTEGRATION SECTION ===
+# ==============================================================================
 
 # === CUSTOM EMOJI HELPER FUNCTIONS ===
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -63,24 +122,14 @@ if 'app_title_emoji_left' not in st.session_state: st.session_state.app_title_em
 if 'app_title_emoji_right' not in st.session_state: st.session_state.app_title_emoji_right = get_random_emoji_image_path()
 if 'home_link_nav_icon' not in st.session_state: st.session_state.home_link_nav_icon = get_random_emoji_image_path(subfolder="home", fallback_emoji="🏠")
 
-# === Load Environment Variables & MongoDB Setup ===
-load_dotenv()
-MONGO_URI = os.getenv("MONGO_URI")
-if not MONGO_URI: st.error("❌ MONGO_URI not set."); st.stop()
-@st.cache_resource
-def get_mongo_client():
-    try:
-        ca = certifi.where()
-        client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
-        client.admin.command('ping'); print("MongoDB connection successful!")
-        return client
-    except Exception as e:
-        st.error(f"❌ MongoDB connection failed: {e}"); return None
+# === MongoDB Client Initialization ===
 mongo_client = get_mongo_client()
 if mongo_client:
-    db = mongo_client["nasa_osdr"]; studies_collection = db["studies"]
+    db = mongo_client["nasa_osdr"]
+    studies_collection = db["studies"]
 else:
-    st.error("Halting app due to MongoDB connection failure."); st.stop()
+    st.error("Halting app due to MongoDB connection failure. Check your secrets.")
+    st.stop()
 
 # === Sidebar ===
 with st.sidebar:
@@ -89,25 +138,31 @@ with st.sidebar:
     st.markdown("---")
     st.header("Admin Tools")
     if st.button("Clear App Cache & State", key="clear_cache_state_btn"):
-        st.cache_data.clear(); st.cache_resource.clear()
-        for key in list(st.session_state.keys()): del st.session_state[key]
-        st.success("App cache & session state cleared."); st.rerun()
+        st.cache_data.clear()
+        st.cache_resource.clear()
+        for key in list(st.session_state.keys()):
+            del st.session_state[key]
+        st.success("App cache & session state cleared.")
+        st.rerun()
 
 # === Main App Title ===
 app_title_cols = st.columns([1, 8, 1], gap="small")
-with app_title_cols[0]: st.image(st.session_state.app_title_emoji_left, width=50)
+with app_title_cols[0]:
+    st.image(st.session_state.app_title_emoji_left, width=50)
 app_title_cols[1].title("NASA OSDR Explorer", anchor=False)
-with app_title_cols[2]: st.image(st.session_state.app_title_emoji_right, width=50)
+with app_title_cols[2]:
+    st.image(st.session_state.app_title_emoji_right, width=50)
 st.markdown("Extract, explore, and visualize data from NASA's Open Science Data Repository.")
 
 # === Tabs ===
 tab_ai_search, tab_explorer, tab_kg, tab_extract = st.tabs(["🤖 AI Semantic Search", "📚 Study Explorer (Keyword)", "🕸️ Knowledge Graph", "🧬 Data & Setup"])
 
-# === Tab 1: AI Semantic Search ===
+# === AI Semantic Search Tab ===
 with tab_ai_search:
     st.header("🤖 AI-Powered Semantic Search")
     st.markdown("Ask a question in natural language to find the most conceptually related studies in the dataset.")
     user_question = st.text_area("Enter your research question:", height=100, placeholder="e.g., What are the effects of microgravity on the cardiovascular system of mammals?")
+
     if st.button("Search with AI", key="ai_search_button"):
         if user_question:
             with st.spinner("Searching for conceptually similar studies using Vertex AI and MongoDB..."):
@@ -115,11 +170,11 @@ with tab_ai_search:
         else:
             st.warning("Please enter a question to search.")
             st.session_state.ai_search_results = []
-    
-    if 'ai_search_results' in st.session_state and st.session_state.ai_search_results:
+
+    if st.session_state.ai_search_results:
         results = st.session_state.ai_search_results
-        if "error" in results[0]:
-            st.error(f"An error occurred: {results[0]['error']}")
+        if not results or (isinstance(results, list) and len(results) > 0 and "error" in results[0]):
+            st.error(f"An error occurred: {results[0].get('error', 'Unknown')}")
         else:
             st.success(f"Found **{len(results)}** conceptually relevant studies, sorted by relevance.")
             for item in results:
@@ -132,7 +187,7 @@ with tab_ai_search:
                             st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
                             st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab to view.")
 
-# === Tab 2: Study Explorer (Keyword) ===
+# === Keyword Search Tab ===
 with tab_explorer:
     st.header("📚 Keyword-Based Study Explorer")
     st.markdown("Filter and view detailed information for studies stored in the database using exact keywords.")
@@ -150,8 +205,8 @@ with tab_explorer:
             st.session_state.mongo_query = query
             st.session_state.search_triggered = True
 
-    if st.session_state.get('search_triggered'):
-        results = list(studies_collection.find(st.session_state.get('mongo_query', {})).limit(50))
+    if st.session_state.get('search_triggered') and 'mongo_query' in st.session_state:
+        results = list(studies_collection.find(st.session_state.mongo_query).limit(50))
         st.metric(label="Studies Found", value=len(results))
         if not results and st.session_state.mongo_query: st.warning("No studies match your filter criteria.")
         for item in results:
@@ -162,10 +217,10 @@ with tab_explorer:
                     st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
                     st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab.")
 
-# === Tab 3: Knowledge Graph ===
+# === Knowledge Graph Tab ===
 with tab_kg:
     st.header("🕸️ Study Knowledge Graph")
-    if not neo4j_enabled: st.error("❌ Neo4j features currently disabled.")
+    if not neo4j_enabled: st.error("❌ Neo4j features disabled.")
     else:
         selected_study_id = st.session_state.get('selected_study_for_kg')
         if selected_study_id:
@@ -199,7 +254,7 @@ with tab_kg:
             if len(st.session_state.kg_study_ids) == 2:
                 if st.button(f"Compare {st.session_state.kg_study_ids[0]} & {st.session_state.kg_study_ids[1]} with AI"):
                     with st.spinner("🛰️ Calling Google Gemini to analyze..."):
-                        docs = list(studies_collection.find({"study_id": {"$in": st.session_state.kg_study_ids}}))
+                        docs = list(studies_collection.find({"study_id": {"$in": st.session_state.kg_study_ids}}, {"_id": 0, "study_id": 1, "title": 1, "description": 1}))
                         if len(docs) == 2:
                             d1 = f"ID: {docs[0].get('study_id')}, Title: {docs[0].get('title')}, Desc: {docs[0].get('description')}"
                             d2 = f"ID: {docs[1].get('study_id')}, Title: {docs[1].get('title')}, Desc: {docs[1].get('description')}"
@@ -214,17 +269,17 @@ with tab_kg:
                 st.rerun()
         else: st.info("To view a graph, find one using the search tabs.")
 
-# === Tab 4: Data & Setup ===
+# === Data & Setup Tab ===
 with tab_extract:
     st.header("🧬 OSDR Data Status & Management")
+    if 'last_scrape_status_message' in st.session_state and st.session_state.last_scrape_status_message:
+        status_type = st.session_state.get('last_scrape_status_type', 'info')
+        getattr(st, status_type)(st.session_state.last_scrape_status_message)
     try:
-        if st.session_state.last_scrape_status_message:
-            status_type = st.session_state.get('last_scrape_status_type', 'info')
-            getattr(st, status_type)(st.session_state.last_scrape_status_message)
         studies_count = studies_collection.count_documents({})
         if studies_count > 0:
             st.success(f"✅ Your MongoDB database is populated with **{studies_count}** studies.")
-            if st.button("🔄 Re-fetch All Data (will overwrite existing)", key="refetch_data_btn"):
+            if st.button("🔄 Re-fetch All Data (will overwrite)", key="refetch_data_btn"):
                 st.session_state.scraping_in_progress = True; st.rerun()
         else:
             st.warning("Your database is empty."); st.markdown("Use the button below to scrape all study data.")
@@ -247,6 +302,9 @@ with tab_extract:
                     st.session_state.scraping_in_progress = False; st.rerun()
     except Exception as e: st.error(f"❌ DB status check failed: {e}")
 
+
+
+
 # === Optional CLI Functionality ===
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "run_scraper":
@@ -260,8 +318,12 @@ if __name__ == "__main__":
                     save_to_json(studies, "data/osdr_studies_cli.json")
                     counts = save_to_mongo(studies, cli_studies_collection)
                     print(f"✅ MongoDB (CLI): {counts.get('inserted',0)} inserted, {counts.get('updated',0)} updated.")
-                else:
-                    print("⚠️ No studies were extracted in CLI run.")
+                else: print("⚠️ No studies were extracted in CLI run.")
             except Exception as e:
                 print(f"❌ Error in CLI scraper pipeline: {e}"); traceback.print_exc()
+
+
+
+
+
 
