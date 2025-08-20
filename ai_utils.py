@@ -1,160 +1,147 @@
+# ai_utils.py
+
+import streamlit as st
 import os
 import vertexai
+import json
 from vertexai.generative_models import GenerativeModel
 from vertexai.language_models import TextEmbeddingModel
-from pymongo import MongoClient
+from google.oauth2 import service_account
 
-# --- CONFIGURATION ---
-if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
-    # This line is mainly for local testing. On Streamlit Cloud, the credentials
-    # will be set by the helper function in the main app.
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "./gcp_credentials.json"
+# --- Centralized Vertex AI Initialization ---
+_vertex_ai_initialized = False
 
-PROJECT_ID = "nasa-osdr-mongo"  # Your GCP Project ID
-LOCATION = "us-central1"        # The GCP region
+def init_vertex_ai():
+    """
+    Initializes Vertex AI with credentials, handling both local and Streamlit Cloud environments.
+    This function should be called once before any Vertex AI operations.
+    """
+    global _vertex_ai_initialized
+    if _vertex_ai_initialized:
+        return
 
-# --- GENERATIVE COMPARISON FUNCTION ---
+    print("Attempting to initialize Vertex AI...")
+    
+    # Check if running in Streamlit's cloud environment
+    if "GCP_PROJECT_ID" in st.secrets:
+        print("Authenticating to GCP using Streamlit Secrets...")
+        try:
+            # Get credentials from Streamlit's secrets
+            creds_json_str = st.secrets["GOOGLE_APPLICATION_CREDENTIALS_JSON"]
+            creds_dict = json.loads(creds_json_str)
+            credentials = service_account.Credentials.from_service_account_info(creds_dict)
+            
+            vertexai.init(
+                project=st.secrets["GCP_PROJECT_ID"],
+                location=st.secrets["GCP_LOCATION"],
+                credentials=credentials
+            )
+            _vertex_ai_initialized = True
+            print("Vertex AI initialized successfully from Streamlit Secrets.")
+        except Exception as e:
+            print(f"!!!!!!!! ERROR: Failed to initialize Vertex AI from Streamlit Secrets: {e}")
+            st.error(f"Authentication Error: Could not initialize Vertex AI. Please check your Streamlit Secrets configuration. Details: {e}")
+    else:
+        # Running in a local environment, use .env variables
+        print("Authenticating to GCP using local environment variables...")
+        try:
+            # For local, ensure GOOGLE_APPLICATION_CREDENTIALS points to your .json file in .env
+            # And GCP_PROJECT_ID/GCP_LOCATION are also in your .env
+            project_id = os.getenv("GCP_PROJECT_ID")
+            location = os.getenv("GCP_LOCATION")
+            if not project_id or not location:
+                raise ValueError("GCP_PROJECT_ID and GCP_LOCATION must be set in your .env file for local development.")
+            
+            vertexai.init(project=project_id, location=location)
+            _vertex_ai_initialized = True
+            print("Vertex AI initialized successfully from local environment.")
+        except Exception as e:
+            print(f"!!!!!!!! ERROR: Failed to initialize Vertex AI locally: {e}")
+            st.error(f"Authentication Error: Could not initialize Vertex AI locally. Ensure your .env file and ADC are configured correctly. Details: {e}")
+
+# --- AI-Powered Functions ---
+
 def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
-    """
-    Uses the Gemini AI model to generate a comparison between two studies.
-    """
-    print("Initializing Vertex AI for generative model...")
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-
+    """Uses Gemini to generate a comparison between two studies."""
+    init_vertex_ai() # Ensure Vertex AI is initialized
+    
+    if not _vertex_ai_initialized:
+        return "Error: Vertex AI not initialized. Cannot perform comparison."
+        
     model = GenerativeModel("gemini-1.5-flash-001")
-    print("Gemini 1.5 Flash model loaded.")
-
     prompt = f"""
-    You are a helpful NASA science assistant. Your task is to compare two scientific studies and provide a brief, insightful summary of their relationship. Focus on their similarities and differences in terms of the factors they investigate and the organisms they use.
+    You are a helpful NASA science assistant. Compare two scientific studies based on the provided details. Focus on their similarities and differences in methodology, organisms studied, and key factors investigated.
 
-    Here is the data for the two studies:
-
+    STUDY 1: {study_1_details}
     ---
-    STUDY 1:
-    {study_1_details}
+    STUDY 2: {study_2_details}
     ---
-    STUDY 2:
-    {study_2_details}
-    ---
-
     Please provide your analysis in a concise paragraph.
     """
-
     try:
-        print("Sending request to Gemini API...")
         response = model.generate_content(prompt)
-        print("Received response from Gemini API.")
         return response.text
     except Exception as e:
-        error_message = f"An error occurred while contacting the AI model: {e}"
-        print(error_message)
-        return error_message
+        return f"Error contacting Gemini for comparison: {e}"
 
-# --- VECTOR SEARCH FUNCTION ---
 def perform_vector_search(query_string: str, collection, limit=10):
-    """
-    Performs a vector search on the MongoDB collection.
-    """
-    print("Initializing Vertex AI for embedding the search query...")
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-
+    """Performs a vector search on the MongoDB collection."""
+    init_vertex_ai() # Ensure Vertex AI is initialized
+    
+    if not _vertex_ai_initialized:
+        return [{"error": "Vertex AI not initialized. Cannot perform vector search."}]
+        
     model = TextEmbeddingModel.from_pretrained("text-embedding-004")
-    print(f"Generating embedding for query: '{query_string}'")
-
-    # 1. Get the vector embedding for the user's query
     query_embedding = model.get_embeddings([query_string])[0].values
-
-    # 2. Define the MongoDB Vector Search aggregation pipeline
+    
     pipeline = [
-        {
-            "$vectorSearch": {
-                "index": "vector_index",
-                "path": "text_embedding",
-                "queryVector": query_embedding,
-                "numCandidates": 200,
-                "limit": limit
-            }
-        },
-        {
-            "$project": {
-                "study_id": 1, "title": 1, "description": 1,
-                "organisms": 1, "factors": 1, "study_link": 1,
-                "score": { "$meta": "vectorSearchScore" }
-            }
-        }
+        {"$vectorSearch": {
+            "index": "vector_index", # Ensure this index exists in your MongoDB Atlas collection
+            "path": "text_embedding", # The field containing the vectors
+            "queryVector": query_embedding,
+            "numCandidates": 150,
+            "limit": limit
+        }},
+        {"$project": {
+            "study_id": 1, "title": 1, "description": 1,
+            "organisms": 1, "factors": 1, "study_link": 1,
+            "score": { "$meta": "vectorSearchScore" }
+        }}
     ]
-
-    print("Executing vector search query in MongoDB...")
     try:
         results = collection.aggregate(pipeline)
         return list(results)
     except Exception as e:
         print(f"An error occurred during vector search: {e}")
-        return [{"error": str(e)}]
+        return [{"error": f"Vector search failed: {e}"}]
 
-# ==============================================================================
-# === NEW AI SUMMARY FUNCTION (ADD THIS) ===
-# ==============================================================================
-def get_ai_summary(question, search_results):
-    """
-    Generates a 1-2 sentence summary from search results using Gemini.
-    """
-    print("Initializing Vertex AI for summary generation...")
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
+def get_ai_summary(question: str, search_results: list) -> str:
+    """Generates a 1-2 sentence summary from search results using Gemini."""
+    init_vertex_ai() # Ensure Vertex AI is initialized
     
+    if not _vertex_ai_initialized:
+        return "Error: Vertex AI not initialized. Cannot generate summary."
+        
     model = GenerativeModel("gemini-1.5-flash-001")
-
-    # Create a concise context from the top 3 search results
-    top_results = search_results[:3]
+    
+    # Create a concise context from the top results for the prompt
     context = ""
-    for result in top_results:
+    for result in search_results[:3]: # Use top 3 results for context
         context += f"Title: {result.get('title', 'N/A')}\\nDescription: {result.get('description', 'N/A')}\\n\\n"
 
     prompt = f"""
-    Based on the following search results for the user's question, provide a concise 1-2 sentence summary of the findings.
+    Based on the following search results for the user's question, provide a concise 1-2 sentence summary of the key findings or themes.
 
     User's Question: "{question}"
-
     Search Results Context:
     {context}
-
     Summary:
     """
-
     try:
-        print("Sending request to Gemini for summary...")
         response = model.generate_content(prompt)
-        print("Received summary from Gemini.")
         return response.text
     except Exception as e:
-        error_message = f"An error occurred while generating the summary: {e}"
-        print(error_message)
-        return error_message
-# ==============================================================================
-
-
-# --- TEST HARNESS ---
-if __name__ == "__main__":
-    # Test Gemini comparison
-    print("\n--- GEMINI COMPARISON TEST ---")
-    comparison = get_ai_comparison("Study on mouse genetics", "Experiment on fruit fly behavior")
-    print(comparison)
-
-    # Optional: test MongoDB vector search
-    print("\n--- VECTOR SEARCH TEST ---")
-    try:
-        # NOTE: This test requires a local MongoDB connection or a valid URI in your environment
-        # client = MongoClient("your_mongo_uri")
-        # db = client["nasa_osdr"]
-        # collection = db["studies"]
-        # query = "Effects of microgravity on cognitive performance"
-        # results = perform_vector_search(query, collection)
-        # for r in results:
-        #     print(r)
-        print("Skipping vector search test. Set MongoDB URI to run.")
-    except Exception as db_error:
-        print(f"Database connection failed: {db_error}")
-
+        return f"Error contacting Gemini for summary: {e}"
 
 
 
