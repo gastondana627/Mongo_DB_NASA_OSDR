@@ -1,8 +1,8 @@
 # test_aura_connection.py
 from neo4j import GraphDatabase
 
-URI = "neo4j+s://5be416cb.databases.neo4j.io"
-AUTH = ("neo4j", "iyODr6mTbLqK5wpj2eKE2ZUbTQbz3-DnZ6kTLiNvZPM") # <--- REPLACE WITH YOUR REAL PASSWORD
+URI = "__"
+AUTH = ("neo4j", "___") # <--- REPLACE WITH YOUR REAL PASSWORD
 
 print(f"--- Attempting to connect to: {URI} ---")
 try:
