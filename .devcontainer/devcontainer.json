@@ -1,17 +1,19 @@
 {
   "name": "Python 3",
-  // Or use a Dockerfile or Docker Compose file. More info: https://containers.dev/guide/dockerfile
-  "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bullseye",
+  "image": "mcr.microsoft.com/devcontainers/python:3.11",
+
+  "runArgs": [
+    "--env-file", ".env"
+  ],
+
+  "postCreateCommand": "pip install -r requirements.txt",
+
+  "postAttachCommand": {
+    "server": "streamlit run streamlit_main_app.py --server.enableCORS false --server.enableXsrfProtection false"
+  },
 
   "customizations": {
-    "codespaces": {
-      "openFiles": [
-        "README.md",
-        "streamlit_main_app.py"
-      ]
-    },
     "vscode": {
-      "settings": {},
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance"
@@ -19,17 +21,6 @@
     }
   },
 
-  // This command runs once when the container is created.
-  // It's the best place to install all your dependencies.
-  "postCreateCommand": "pip install --user -r requirements.txt",
-
-  // This command runs every time you attach to the container.
-  // Use this to start your application server.
-  "postAttachCommand": {
-    "server": "streamlit run streamlit_main_app.py --server.enableCORS false --server.enableXsrfProtection false"
-  },
-
-  // This section forwards the port from the container to your local machine.
   "forwardPorts": [
     8501
   ],

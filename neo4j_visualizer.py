@@ -4,25 +4,56 @@ import streamlit as st
 from neo4j import GraphDatabase
 from pyvis.network import Network
 
+# In neo4j_visualizer.py
+
+# In neo4j_visualizer.py
+
 def _build_graph_from_records(records):
-    """A generic helper to build a Pyvis graph from Neo4j query results."""
-    net = Network(height="720px", width="100%", notebook=True, cdn_resources='in_line', bgcolor="#222222", font_color="white")
-    net.show_buttons(filter_=['physics'])
-    added_nodes, study_ids_in_graph = set(), set()
+    """Builds a Pyvis graph from the Neo4j query results."""
+    net = Network(height="750px", width="100%", notebook=True, cdn_resources='in_line', bgcolor="#1E1E1E", font_color="#FFFFFF", directed=True)
+    net.set_options("""
+    var options = {
+      "physics": {
+        "barnesHut": {
+          "gravitationalConstant": -40000,
+          "centralGravity": 0.15,
+          "springLength": 170
+        },
+        "minVelocity": 0.75
+      }
+    }
+    """)
+
+    added_nodes = set()
+
     for record in records:
-        for key, value in record.items():
-            if isinstance(value, dict):
-                node_id = value.get('study_id') or value.get('name')
-                if not node_id or node_id in added_nodes: continue
-                label = (record.get(f"{key}_labels") or value.get('labels', ["Unknown"]))[0]
-                if label == "Study": study_ids_in_graph.add(node_id)
-                net.add_node(node_id, label=node_id, title=value.get('title', node_id), size=25 if label == "Study" else 15)
+        start_node_props = record.get('start')
+        neighbor_node_props = record.get('neighbor')
+
+        # Add the main study node
+        if start_node_props and start_node_props.get('study_id') not in added_nodes:
+            node_id = start_node_props['study_id']
+            net.add_node(node_id, label=node_id, title=start_node_props.get('title', node_id), color="#0083FF", size=30, group="Study")
+            added_nodes.add(node_id)
+
+        # Add the neighboring node
+        if neighbor_node_props:
+            neighbor_labels = record.get('neighbor_labels', ['Unknown'])
+            node_group = neighbor_labels[0] if neighbor_labels else "Unknown"
+            node_id = neighbor_node_props.get('name')
+
+            if node_id and node_id not in added_nodes:
+                color_map = {"Organism": "#FF6C00", "Factor": "#C600FF", "Assay": "#00D95A"}
+                net.add_node(node_id, label=node_id, title=node_id, group=node_group, color=color_map.get(node_group, "#CCCCCC"), size=15)
                 added_nodes.add(node_id)
-        # Add edge processing logic here based on your query structure
-        if 'start' in record and 'neighbor' in record:
-             net.add_edge(record['start']['study_id'], record['neighbor']['name'])
-             
-    return net.generate_html(), list(study_ids_in_graph)
+
+            # Add the edge connecting the study to its neighbor
+            if start_node_props and start_node_props.get('study_id') and node_id:
+                net.add_edge(start_node_props['study_id'], node_id)
+
+    return net.generate_html(), list(added_nodes) # Return list of nodes in graph
+
+
 
 def run_graph_query(query: str, params: dict = None):
     """
