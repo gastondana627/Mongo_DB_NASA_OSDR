@@ -1,3 +1,4 @@
+import streamlit as st
 # === Python Standard Libraries ===
 import os
 import sys
@@ -8,12 +9,16 @@ import json
 from tempfile import NamedTemporaryFile
 
 
+
 # Config/Configuration
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, MONGO_URI
 
+# ===== PAGE CONFIG (MUST BE FIRST) =====
+st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
+
+
 
 # === Third-Party Libraries ===
-import streamlit as st
 
 
 import streamlit as st
@@ -62,8 +67,6 @@ import certifi
 load_dotenv()
 
 # === Streamlit Page Config (MUST BE FIRST) ===
-st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
-
 # === Import Custom Functions ===
 from scraper.formatter import extract_study_data
 from scraper.utils import save_to_json, save_to_mongo
