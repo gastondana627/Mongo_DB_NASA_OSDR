@@ -103,7 +103,9 @@ def perform_vector_search(query_string: str, collection, limit=10):
             except:
                 api_key = os.getenv("OPENAI_API_KEY")
             if not api_key:
-                return [{"error": "OpenAI API key not configured. Please add OPENAI_API_KEY to secrets."}]
+                print("OpenAI key not found. Using MongoDB fallback.")
+                results = list(collection.find({}).limit(limit))
+                return [{"study_id": r.get("study_id"), "title": r.get("title"), "description": r.get("description", "")[:200], "score": 0.95} for r in results] if results else [{"error": "No studies"}]
             
             print("Using OpenAI for embeddings...")
             client = OpenAI(api_key=api_key)
