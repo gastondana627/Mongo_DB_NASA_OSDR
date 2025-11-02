@@ -1,3 +1,4 @@
+import os
 # neo4j_visualizer.py (Final Submission Version)
 
 import streamlit as st
@@ -61,10 +62,18 @@ def run_graph_query(query: str, params: dict = None):
     """
     driver = None
     try:
-        # Accessing secrets using the correct nested structure (e.g., st.secrets.neo4j.URI)
-        uri = st.secrets.neo4j.URI
-        user = st.secrets.neo4j.USER
-        password = st.secrets.neo4j.PASSWORD
+        # Check if Neo4j secrets are available
+        if not hasattr(st.secrets, 'neo4j'):
+            return [{"error": "Neo4j credentials not found in Streamlit secrets. Please configure Neo4j connection in your app settings."}]
+        
+        # Accessing credentials from .env
+        uri = os.getenv("NEO4J_LOCAL_URI", "bolt://localhost:7687")
+        user = os.getenv("NEO4J_LOCAL_USER", "neo4j")
+        password = os.getenv("NEO4J_LOCAL_PASSWORD", "")
+        
+        # Validate connection parameters
+        if not all([uri, user, password]):
+            return [{"error": "Neo4j connection parameters are incomplete. Please check URI, USER, and PASSWORD in secrets."}]
         
         driver = GraphDatabase.driver(
             uri, 
@@ -72,12 +81,24 @@ def run_graph_query(query: str, params: dict = None):
             max_connection_lifetime=360, 
             connection_timeout=30
         )
+        
+        # Test connection first
+        driver.verify_connectivity()
+        
         with driver.session() as session:
             return session.run(query, parameters=params).data()
+            
     except Exception as e:
-        return [{"error": f"Neo4j Connection Error: {e}"}]
+        error_msg = str(e)
+        if "Cannot resolve address" in error_msg:
+            return [{"error": f"Neo4j database is not accessible. Please check if the database is running and the URI is correct. Error: {error_msg}"}]
+        elif "authentication" in error_msg.lower():
+            return [{"error": f"Neo4j authentication failed. Please check your username and password. Error: {error_msg}"}]
+        else:
+            return [{"error": f"Neo4j Connection Error: {error_msg}"}]
     finally:
-        if driver: driver.close()
+        if driver: 
+            driver.close()
 
 def build_and_display_study_graph(study_id: str):
     """Builds the initial graph for a single study."""
@@ -95,4 +116,19 @@ def find_similar_studies_by_organism(study_id: str):
 def expand_second_level_connections(study_id: str):
     # This query and logic would need to be implemented fully
     return ("<h3>Function not fully implemented.</h3>", [study_id])
+
+def create_pyvis_graph_from_result(query_data):
+    """
+    Creates a Pyvis graph visualization from Neo4j query result data.
+    Handles different types of query results (nodes, relationships, paths).
+    This function is maintained for backward compatibility.
+    """
+    # Import the enhanced results formatter
+    from results_formatter import results_formatter
+    
+    if not query_data:
+        return None
+    
+    # Use the enhanced graph visualization
+    return results_formatter.create_enhanced_graph_visualization(query_data)
 

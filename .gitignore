@@ -12,3 +12,7 @@ venv/
 
 
 
+# Security/Secrets
+gcp_credentials.json
+.env
+.env.local
