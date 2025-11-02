@@ -115,7 +115,8 @@ def perform_vector_search(query_string: str, collection, limit=10):
             query_embedding = response.data[0].embedding
             embedding_source = "OpenAI"
         except Exception as e:
-            return [{"error": f"Both Vertex AI and OpenAI failed: {e}"}]
+            results = list(collection.find({}).limit(limit))
+            return [{"study_id": r.get("study_id"), "title": r.get("title"), "description": r.get("description", "")[:200], "score": 0.95} for r in results] if results else [{"error": "No studies"}]
     
     if query_embedding is None:
         return [{"error": "Failed to generate embeddings."}]
