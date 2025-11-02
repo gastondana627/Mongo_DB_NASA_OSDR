@@ -1,4 +1,3 @@
-import streamlit as st
 # === Python Standard Libraries ===
 import os
 import sys
@@ -9,56 +8,12 @@ import json
 from tempfile import NamedTemporaryFile
 
 
-
 # Config/Configuration
 from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, MONGO_URI
 
-# ===== PAGE CONFIG (MUST BE FIRST) =====
-st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
-
-
 
 # === Third-Party Libraries ===
-
-
 import streamlit as st
-
-# Custom CSS for sleek UI
-st.markdown("""
-<style>
-:root {
-    --accent: #00D9FF;
-    --bg-dark: #0E1117;
-}
-
-h1, h2, h3 {
-    font-family: 'IBM Plex Mono', 'Courier New', monospace;
-    letter-spacing: 0.03em;
-}
-
-button {
-    border-radius: 4px !important;
-    font-family: 'IBM Plex Mono', monospace !important;
-    font-weight: 500 !important;
-}
-
-[data-testid="stExpander"] {
-    border-radius: 6px !important;
-}
-
-.stTabs [data-baseweb="tab-list"] button {
-    font-family: 'IBM Plex Mono', monospace;
-    letter-spacing: 0.02em;
-    border-bottom: 2px solid transparent;
-}
-
-.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
-    border-bottom-color: #00D9FF !important;
-    color: #00D9FF !important;
-}
-</style>
-""", unsafe_allow_html=True)
-
 from dotenv import load_dotenv  # NOW UNCOMMENTED & USED
 from pymongo import MongoClient
 import certifi
@@ -67,6 +22,8 @@ import certifi
 load_dotenv()
 
 # === Streamlit Page Config (MUST BE FIRST) ===
+st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
+
 # === Import Custom Functions ===
 from scraper.formatter import extract_study_data
 from scraper.utils import save_to_json, save_to_mongo
@@ -219,7 +176,6 @@ else:
     neo4j_enabled = False
 
 # === Session State Initialization ===
-if 'cypher_editor' not in st.session_state: st.session_state['cypher_editor'] = {}
 for key in ['graph_html', 'last_scrape_status_message', 'ai_comparison_text', 'selected_study_for_kg', 'mongo_query']:
     if key not in st.session_state: st.session_state[key] = None
 for key in ['kg_study_ids', 'ai_search_results']:
@@ -282,7 +238,7 @@ try:
                 self.connected = True
                 return True
             except Exception as e:
-                print(f"⚡ Neo4j offline: {str(e)[:50]}")
+                print(f"⚠️ Neo4j offline: {str(e)[:50]}")
                 self.connected = False
                 return False
         
@@ -292,7 +248,7 @@ try:
     
     # Try to connect
     neo4j_conn = Neo4jConnection()
-    print(f"→ Neo4j URI = {neo4j_conn.uri}")
+    print(f"🔍 Debug: Neo4j URI = {neo4j_conn.uri}")
     neo4j_enabled = neo4j_conn.connect()
     
 except Exception as e:
@@ -333,7 +289,7 @@ with st.sidebar:
     if neo4j_enabled and neo4j_conn and neo4j_conn.connected:
         st.success("✅ Neo4j: Connected")
     else:
-        st.info("⚡ Neo4j: Offline (optional)")
+        st.info("⚠️ Neo4j: Offline (optional)")
 
 # === Main App Title ===
 app_title_cols = st.columns([1, 8, 1], gap="small")
@@ -351,7 +307,13 @@ tab_ai_search, tab_explorer, tab_kg, tab_extract = st.tabs(["AI Semantic Search"
 
 # === AI Semantic Search Tab (DISABLED - GCP permissions pending) ===
 with tab_ai_search:
-    st.header("AI-Powered Semantic Search")
+    st.info("ℹ️ **AI Vector Search Status**: Vector index setup in progress. The search functionality will be available once MongoDB Atlas vector search is configured.")
+    # Custom header with NASA emoji
+    header_cols = st.columns([1, 10])
+    with header_cols[0]:
+        st.image(get_custom_emoji_for_context("ai_search"), width=40)
+    with header_cols[1]:
+        st.header("AI-Powered Semantic Search")
     st.markdown("Ask a question in natural language to find the most conceptually related studies in the dataset.")
     user_question = st.text_area("Enter your research question:", height=100, placeholder="e.g., What are the effects of microgravity on the cardiovascular system of mammals?")
 
@@ -361,7 +323,7 @@ with tab_ai_search:
                 with st.spinner("Searching for conceptually similar studies using Vertex AI and MongoDB..."):
                     st.session_state.ai_search_results = perform_vector_search(user_question, studies_collection)
             except Exception as e:
-                st.error(f"⚡ AI Search error: {str(e)}")
+                st.error("⚠️ AI Search unavailable. GCP Vertex AI permissions are being updated. Try again in 5 minutes.")
                 st.session_state.ai_search_results = []
         else:
             st.warning("Please enter a question to search.")
@@ -449,37 +411,99 @@ with tab_explorer:
 
 # === Knowledge Graph Tab ===
 with tab_kg:
-    st.subheader("Cypher Query Interface")
+    # Custom header with NASA emoji
+    header_cols = st.columns([1, 10])
+    with header_cols[0]:
+        st.image(get_custom_emoji_for_context("knowledge_graph"), width=40)
+    with header_cols[1]:
+        st.header("Enhanced Knowledge Graph Explorer")
     
-    # Query editor
-    current_query = st.text_area("Enter Cypher Query:", height=150, placeholder="MATCH (n) RETURN n LIMIT 10")
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.button("Execute Query"):
-            with st.spinner("Executing..."):
-                try:
-                    result = neo4j_executor.execute_query(current_query)
-                    if result.success:
-                        st.session_state.cypher_query_result = result
-                        st.success(f"Query executed in {result.execution_time:.0f}ms")
-                        if result.data:
-                            st.json(result.data[:10])  # Show first 10 results
+    if not neo4j_enabled:
+        error_cols = st.columns([1, 20])
+        with error_cols[0]:
+            st.image(get_custom_emoji_for_context("error"), width=20)
+        with error_cols[1]:
+            st.error("Neo4j features disabled.")
+    else:
+        def execute_cypher(query: str):
+            if not neo4j_enabled or not neo4j_conn or not neo4j_conn.connected:
+                return type('R', (), {'success': False, 'error_message': 'Neo4j not connected', 'data': None, 'execution_time': 0})()
+            import time
+            t0 = time.time()
+            try:
+                with neo4j_conn.driver.session() as sess:
+                    res = sess.run(query)
+                    data = [r.data() for r in res]
+                return type('R', (), {'success': True, 'error_message': None, 'data': data, 'execution_time': (time.time()-t0)*1000})()
+            except Exception as e:
+                return type('R', (), {'success': False, 'error_message': str(e), 'data': None, 'execution_time': 0})()
+        
+        editor_col, results_col = st.columns([1, 2], gap="medium")
+        
+        with editor_col:
+            st.subheader("Cypher Query Interface")
+            st.markdown("### Query Templates")
+            template_select = st.selectbox(
+                "Choose a template:",
+                ["Find all studies", "Studies with mice", "Spaceflight studies", "Study connections"],
+                key="kg_template_select"
+            )
+            templates = {
+                "Find all studies": "MATCH (s:Study) RETURN s LIMIT 10",
+                "Studies with mice": "MATCH (s:Study)-[:HAS_ORGANISM]->(o:Organism) WHERE o.organism_name CONTAINS 'mouse' RETURN s, o LIMIT 5",
+                "Spaceflight studies": "MATCH (s:Study)-[:HAS_FACTOR]->(f:Factor) WHERE f.factor_name CONTAINS 'spaceflight' RETURN s, f LIMIT 5",
+                "Study connections": "MATCH (s:Study)-[r]-(n) WHERE s.study_id = 'OSD-840' RETURN s, r, n LIMIT 20"
+            }
+            if st.button("Use Template"):
+                st.session_state.kg_query = templates[template_select]
+                st.rerun()
+            st.markdown("---")
+            current_query = st.text_area(
+                "Enter Cypher Query:",
+                value=st.session_state.get("kg_query", "MATCH (n) RETURN n LIMIT 10"),
+                height=180,
+                placeholder="MATCH (n) RETURN n LIMIT 10",
+                key="kg_query_input"
+            )
+            st.session_state.kg_query = current_query
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                execute_btn = st.button("Execute Query", key="kg_execute_btn")
+            with col2:
+                clear_btn = st.button("Clear Results", key="kg_clear_btn")
+            with col3:
+                st.write("")
+            if execute_btn and current_query.strip():
+                with st.spinner("Executing..."):
+                    result = execute_cypher(current_query)
+                    st.session_state.kg_result = result
+            if clear_btn:
+                st.session_state.kg_result = None
+                st.rerun()
+            st.markdown("---")
+            st.markdown("### History")
+            st.selectbox("History", ["No query history available"], disabled=True, key="kg_history")
+        
+        with results_col:
+            st.subheader("Query Results & Visualization")
+            if hasattr(st.session_state, 'kg_result') and st.session_state.kg_result:
+                result = st.session_state.kg_result
+                if result.success:
+                    st.markdown(f"**Execution Time:** {result.execution_time:.2f}ms")
+                    if result.data:
+                        st.markdown(f"**Results ({len(result.data)} records):**")
+                        st.json(result.data[:20])
                     else:
-                        st.error(f"Query error: {result.error_message}")
-                except Exception as e:
-                    st.error(f"Execution error: {str(e)}")
-    
-    with col2:
-        if st.button("Clear Results"):
-            st.session_state.cypher_query_result = None
-            st.rerun()
-    
-    with col3:
-        if st.button("Sample Query"):
-            st.session_state.current_query = "MATCH (s:Study) RETURN s LIMIT 10"
-            st.rerun()
+                        st.info("Query executed successfully but returned no data.")
+                else:
+                    st.error(f"Query failed: {result.error_message}")
+            else:
+                st.info("**Get Started:**
+1. Use the Cypher editor on the left
+2. Click 'Execute Query' to see results")
 
+
+# === Data & Setup Tab ===
 with tab_extract:
     # Custom header with NASA emoji
     header_cols = st.columns([1, 10])
@@ -552,6 +576,6 @@ if __name__ == "__main__":
                     save_to_json(studies, "data/osdr_studies_cli.json")
                     counts = save_to_mongo(studies, cli_studies_collection)
                     print(f"✅ MongoDB (CLI): {counts.get('inserted',0)} inserted, {counts.get('updated',0)} updated.")
-                else: print("⚡ No studies were extracted in CLI run.")
+                else: print("⚠️ No studies were extracted in CLI run.")
             except Exception as e:
                 print(f"❌ Error in CLI scraper pipeline: {e}"); traceback.print_exc()
