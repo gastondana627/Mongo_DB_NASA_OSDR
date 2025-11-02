@@ -115,8 +115,9 @@ def perform_vector_search(query_string: str, collection, limit=10):
             query_embedding = response.data[0].embedding
             embedding_source = "OpenAI"
         except Exception as e:
+            print(f"OpenAI failed: {e}. Falling back to MongoDB...")
             results = list(collection.find({}).limit(limit))
-            return [{"study_id": r.get("study_id"), "title": r.get("title"), "description": r.get("description", "")[:200], "score": 0.95} for r in results] if results else [{"error": "No studies"}]
+            return [{"study_id": r.get("study_id"), "title": r.get("title"), "description": r.get("description", "")[:200], "score": 0.95} for r in results] if results else [{"error": "No studies in database"}]
     
     if query_embedding is None:
         return [{"error": "Failed to generate embeddings."}]
