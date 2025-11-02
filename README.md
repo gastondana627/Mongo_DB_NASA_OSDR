@@ -151,10 +151,171 @@ Use environment variables to switch between local and cloud Neo4j instances. In 
 
 ---
 
-This plan lets you finalize the local testing phase robustly and advance confidently to production deployment when ready.
+Localhost vs. Production Configuration
+Environment Overview
 
-You're almost through infrastructure obstacles, fresh progress will come now.
+The application supports two distinct operating modes: local development and cloud production. Each mode requires specific configuration and behaves differently based on available services.
 
+Component | Localhost | Production (Cloud Run)
+MongoDB | Cloud Atlas (remote) | Cloud Atlas (remote)
+Neo4j | Docker Desktop (local:7687) | Unavailable (offline)
+Vertex AI | GCP credentials required | GCP credentials via Secret Manager
+OpenAI | API key from .env | API key via Streamlit Secrets
+Vector Search | MongoDB Atlas vector index | MongoDB Atlas vector index
+AI Search Mode | Vertex AI > OpenAI > MongoDB | OpenAI > MongoDB fallback
+
+Localhost Setup
+
+Purpose: Full-featured development environment with all services accessible.
+
+Prerequisites:
+
+Python 3.10+, Git, Docker Desktop installed
+
+Clone and setup:
+git clone https://github.com/gastondana627/Mongo_DB_NASA_OSDR.git
+cd Mongo_DB_NASA_OSDR
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+Create .env file with local credentials:
+MONGO_URI=mongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/?retryWrites=true&w=majority&appName=NASA-OSDR-MongoDB
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_local_neo4j_password
+GCP_PROJECT_ID=nasa-osdr-mongo
+GCP_LOCATION=us-central1
+OPENAI_API_KEY=sk-proj-your-key-here
+
+Running Locally:
+
+Start Neo4j Docker container:
+docker run -d --name neo4j-local -p 7687:7687 -p 7474:7474 -e NEO4J_AUTH=neo4j/your_password neo4j:latest
+
+Launch Streamlit:
+streamlit run streamlit_main_app.py
+
+App runs at http://localhost:8501
+
+What Works Locally:
+
+✅ AI Semantic Search: Vertex AI (if GCP creds available) > OpenAI > MongoDB fallback
+✅ Study Explorer: Full keyword search with MongoDB
+✅ Knowledge Graph: Full Neo4j visualization with study relationships
+✅ Data & Setup: Scrape and populate MongoDB + Neo4j
+
+Localhost Logs:
+
+✅ MongoDB: Connected
+Neo4j: bolt://localhost:7687
+Using Vertex AI for embeddings...
+Using OpenAI for embeddings...
+Using localhost fallback: returning sample results...
+
+Production Setup (Streamlit Cloud)
+
+Purpose: Public-facing cloud application with managed infrastructure.
+
+Prerequisites:
+
+Streamlit Cloud account (free tier at streamlit.io)
+
+GitHub repository with code pushed to main branch
+
+Secrets configured in Streamlit Cloud dashboard
+
+Configuration:
+
+Navigate to astroarchive.streamlit.app > Settings (gear icon) > Secrets and add:
+
+OPENAI_API_KEY = "sk-proj-your-key-here"
+GCP_PROJECT_ID = "nasa-osdr-mongo"
+GCP_LOCATION = "us-central1"
+MONGO_URI = "mongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/..."
+
+What Works in Production:
+
+✅ AI Semantic Search: OpenAI API > MongoDB fallback
+✅ Study Explorer: Full keyword search with MongoDB
+⚠️ Knowledge Graph: Shows "Neo4j features disabled" (expected—Neo4j unreachable from cloud)
+✅ Data & Setup: Read-only (no scraping from production)
+
+What Doesn't Work in Production:
+
+❌ Knowledge Graph Rendering: Neo4j is local-only, unreachable from Cloud Run
+❌ Vertex AI: Falls back to OpenAI automatically
+❌ Local Data Scraping: No write access to production sources
+
+Production Logs:
+
+🔧 Running in LOCAL mode
+✅ MongoDB: Connected
+Neo4j: bolt://localhost:7687
+⚠️ Neo4j offline: Couldn't connect to localhost:7687
+Using OpenAI for embeddings...
+
+Decision Tree: Which Environment?
+
+Use LOCALHOST if you want to:
+
+Develop new features
+
+Test Neo4j graph relationships
+
+Populate databases from scratch
+
+Debug AI search pipelines
+
+Work offline with cached data
+
+Use PRODUCTION if you want to:
+
+Share the app publicly
+
+Access via stable URL (astroarchive.streamlit.app)
+
+Leverage MongoDB vector search at scale
+
+Demo AI semantic search (OpenAI mode)
+
+Run without local infrastructure
+
+Common Issues & Fixes
+
+"Neo4j offline" in Production (Expected)
+
+Neo4j is not accessible from Cloud Run. Knowledge Graph shows disabled warning. This is intentional.
+
+Fix: Deploy cloud-hosted Neo4j (Neo4j AuraDB) if KG needed in production.
+
+"OpenAI API key not configured" in Production
+
+Fix: Add OPENAI_API_KEY to Streamlit Cloud Secrets (see Configuration above).
+
+"GCP_PROJECT_ID and GCP_LOCATION" error in Production
+
+Fix: Optional. Only needed for Vertex AI. Add both to Secrets or leave empty for OpenAI fallback.
+
+AI Search returns "No studies in database" in Production
+
+Fix: Ensure MongoDB Atlas vector index is created. Run locally:
+python3 generate_embeddings.py
+python3 update_mongo_with_embeddings.py
+
+Deployment Workflow
+
+Local Development
+↓
+git push origin main
+↓
+GitHub > Streamlit Cloud Auto-Deploy
+↓
+Production Live (astroarchive.streamlit.app)
+↓
+Changes live in 1-2 minutes
+
+No manual deployment needed—Streamlit Cloud auto-rebuilds on every push to main.
 🚀
 
 
