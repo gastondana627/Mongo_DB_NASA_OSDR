@@ -16,3 +16,4 @@ venv/
 gcp_credentials.json
 .env
 .env.local
+.streamlit/secrets.toml
