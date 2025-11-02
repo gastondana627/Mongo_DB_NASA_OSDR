@@ -109,13 +109,35 @@ def build_and_display_study_graph(study_id: str):
     return _build_graph_from_records(records)
 
 # Placeholder for other functions if they exist
-def find_similar_studies_by_organism(study_id: str): 
-    # This query and logic would need to be implemented fully
-    return ("<h3>Function not fully implemented.</h3>", [study_id])
+def find_similar_studies_by_organism(study_id: str):
+    """Find studies that use the same organism(s) as the selected study."""
+    query = """
+    MATCH (s:Study {study_id: $study_id})-[:USES_ORGANISM]->(o:Organism)
+    MATCH (other:Study)-[:USES_ORGANISM]->(o)
+    WHERE other.study_id <> $study_id
+    RETURN properties(s) as start, properties(o) as organism, properties(other) as similar_study, 
+           labels(o) as organism_labels, labels(other) as study_labels
+    LIMIT 20
+    """
+    records = run_graph_query(query, {'study_id': study_id})
+    if not records or "error" in records[0]:
+        return (f"<h3>Error: {records[0].get('error') if records else 'No similar studies found.'}</h3>", [study_id])
+    return _build_graph_from_records(records)
 
 def expand_second_level_connections(study_id: str):
-    # This query and logic would need to be implemented fully
-    return ("<h3>Function not fully implemented.</h3>", [study_id])
+    """Expand to show second-level connections from the selected study."""
+    query = """
+    MATCH (s:Study {study_id: $study_id})-[r1]-(n)-[r2]-(m)
+    WHERE n.study_id IS NULL OR n.study_id <> $study_id
+    RETURN properties(s) as start, properties(n) as neighbor, properties(m) as second_neighbor,
+           labels(n) as neighbor_labels, labels(m) as second_labels
+    LIMIT 50
+    """
+    records = run_graph_query(query, {'study_id': study_id})
+    if not records or "error" in records[0]:
+        return (f"<h3>Error: {records[0].get('error') if records else 'No expanded connections found.'}</h3>", [study_id])
+    return _build_graph_from_records(records)
+
 
 def create_pyvis_graph_from_result(query_data):
     """

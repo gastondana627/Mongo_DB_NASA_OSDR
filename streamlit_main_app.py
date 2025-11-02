@@ -7,8 +7,53 @@ import random
 import json
 from tempfile import NamedTemporaryFile
 
+
+# Config/Configuration
+from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, MONGO_URI
+
+
 # === Third-Party Libraries ===
 import streamlit as st
+
+
+import streamlit as st
+
+# Custom CSS for sleek UI
+st.markdown("""
+<style>
+:root {
+    --accent: #00D9FF;
+    --bg-dark: #0E1117;
+}
+
+h1, h2, h3 {
+    font-family: 'IBM Plex Mono', 'Courier New', monospace;
+    letter-spacing: 0.03em;
+}
+
+button {
+    border-radius: 4px !important;
+    font-family: 'IBM Plex Mono', monospace !important;
+    font-weight: 500 !important;
+}
+
+[data-testid="stExpander"] {
+    border-radius: 6px !important;
+}
+
+.stTabs [data-baseweb="tab-list"] button {
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.02em;
+    border-bottom: 2px solid transparent;
+}
+
+.stTabs [data-baseweb="tab-list"] button[aria-selected="true"] {
+    border-bottom-color: #00D9FF !important;
+    color: #00D9FF !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 from dotenv import load_dotenv  # NOW UNCOMMENTED & USED
 from pymongo import MongoClient
 import certifi
@@ -171,6 +216,7 @@ else:
     neo4j_enabled = False
 
 # === Session State Initialization ===
+if 'cypher_editor' not in st.session_state: st.session_state['cypher_editor'] = {}
 for key in ['graph_html', 'last_scrape_status_message', 'ai_comparison_text', 'selected_study_for_kg', 'mongo_query']:
     if key not in st.session_state: st.session_state[key] = None
 for key in ['kg_study_ids', 'ai_search_results']:
@@ -233,7 +279,7 @@ try:
                 self.connected = True
                 return True
             except Exception as e:
-                print(f"⚠️ Neo4j offline: {str(e)[:50]}")
+                print(f"⚡ Neo4j offline: {str(e)[:50]}")
                 self.connected = False
                 return False
         
@@ -243,7 +289,7 @@ try:
     
     # Try to connect
     neo4j_conn = Neo4jConnection()
-    print(f"🔍 Debug: Neo4j URI = {neo4j_conn.uri}")
+    print(f"→ Neo4j URI = {neo4j_conn.uri}")
     neo4j_enabled = neo4j_conn.connect()
     
 except Exception as e:
@@ -284,7 +330,7 @@ with st.sidebar:
     if neo4j_enabled and neo4j_conn and neo4j_conn.connected:
         st.success("✅ Neo4j: Connected")
     else:
-        st.info("⚠️ Neo4j: Offline (optional)")
+        st.info("⚡ Neo4j: Offline (optional)")
 
 # === Main App Title ===
 app_title_cols = st.columns([1, 8, 1], gap="small")
@@ -302,14 +348,7 @@ tab_ai_search, tab_explorer, tab_kg, tab_extract = st.tabs(["AI Semantic Search"
 
 # === AI Semantic Search Tab (DISABLED - GCP permissions pending) ===
 with tab_ai_search:
-    st.warning("🔧 AI Search is temporarily disabled for maintenance. Please use the other tabs.")
-    pass
-    # Custom header with NASA emoji
-    header_cols = st.columns([1, 10])
-    with header_cols[0]:
-        st.image(get_custom_emoji_for_context("ai_search"), width=40)
-    with header_cols[1]:
-        st.header("AI-Powered Semantic Search")
+    st.header("AI-Powered Semantic Search")
     st.markdown("Ask a question in natural language to find the most conceptually related studies in the dataset.")
     user_question = st.text_area("Enter your research question:", height=100, placeholder="e.g., What are the effects of microgravity on the cardiovascular system of mammals?")
 
@@ -319,7 +358,7 @@ with tab_ai_search:
                 with st.spinner("Searching for conceptually similar studies using Vertex AI and MongoDB..."):
                     st.session_state.ai_search_results = perform_vector_search(user_question, studies_collection)
             except Exception as e:
-                st.error("⚠️ AI Search unavailable. GCP Vertex AI permissions are being updated. Try again in 5 minutes.")
+                st.error(f"⚡ AI Search error: {str(e)}")
                 st.session_state.ai_search_results = []
         else:
             st.warning("Please enter a question to search.")
@@ -422,22 +461,23 @@ with tab_kg:
             st.error("Neo4j features disabled.")
     else:
         # Import the Cypher editor
-        from cypher_editor import cypher_editor
-        from enhanced_neo4j_executor import neo4j_executor
-        
-        # Create two-column layout: Cypher editor on left, graph on right
-        editor_col, graph_col = st.columns([1, 2], gap="medium")
-        
-        with editor_col:
-            # Custom subheader with NASA emoji
-            subheader_cols = st.columns([1, 10])
-            with subheader_cols[0]:
-                st.image(get_custom_emoji_for_context("cypher"), width=30)
-            with subheader_cols[1]:
-                st.subheader("Cypher Query Interface")
+        try:
+            from cypher_editor import cypher_editor
+            from enhanced_neo4j_executor import neo4j_executor
             
-            # Render the complete Cypher editor
-            current_query, execute_clicked = cypher_editor.render_complete_editor()
+            # Create two-column layout: Cypher editor on left, graph on right
+            editor_col, graph_col = st.columns([1, 2], gap="medium")
+            
+            with editor_col:
+                st.subheader("Cypher Query Interface")
+                
+                # Render the Cypher editor with fallback
+                try:
+                    current_query = st.text_area("Enter Cypher Query:", height=150, placeholder="MATCH (n) RETURN n LIMIT 10")
+                    execute_clicked = st.button("Execute Query", key="execute_cypher")
+                except Exception as e:
+                    st.warning(f"⚡ Cypher editor error: {str(e)[:100]}")
+                    current_query, execute_clicked = None, False
             
             # Handle query execution
             if execute_clicked and current_query.strip():
@@ -617,6 +657,9 @@ with tab_kg:
                     if st.button("Find Similar Study (Organism)"):
                         with st.spinner("Querying..."):
                             html, ids = find_similar_studies_by_organism(selected_study_id)
+                        if not html or not ids:
+                            st.error("❌ Error: No similar studies found.")
+                        else:
                             st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
                         st.rerun()
                 with col2:
@@ -769,6 +812,6 @@ if __name__ == "__main__":
                     save_to_json(studies, "data/osdr_studies_cli.json")
                     counts = save_to_mongo(studies, cli_studies_collection)
                     print(f"✅ MongoDB (CLI): {counts.get('inserted',0)} inserted, {counts.get('updated',0)} updated.")
-                else: print("⚠️ No studies were extracted in CLI run.")
+                else: print("⚡ No studies were extracted in CLI run.")
             except Exception as e:
                 print(f"❌ Error in CLI scraper pipeline: {e}"); traceback.print_exc()

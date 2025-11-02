@@ -77,10 +77,50 @@ def get_ai_comparison(study_1_details: str, study_2_details: str) -> str:
         return f"Error contacting Gemini for comparison: {e}"
 
 def perform_vector_search(query_string: str, collection, limit=10):
-    init_vertex_ai()
-    if not _vertex_ai_initialized: return [{"error": "Vertex AI not initialized."}]
-    model = TextEmbeddingModel.from_pretrained("text-embedding-004")
-    query_embedding = model.get_embeddings([query_string])[0].values
+    """Vector search with Vertex AI (primary) or OpenAI (fallback)"""
+    from openai import OpenAI
+    
+    query_embedding = None
+    embedding_source = None
+    
+    # Try Vertex AI first
+    try:
+        init_vertex_ai()
+        if _vertex_ai_initialized:
+            print("Using Vertex AI for embeddings...")
+            model = TextEmbeddingModel.from_pretrained("text-embedding-004")
+            query_embedding = model.get_embeddings([query_string])[0].values
+            embedding_source = "Vertex AI"
+    except Exception as e:
+        print(f"Vertex AI failed: {e}. Falling back to OpenAI...")
+    
+    # Fallback to OpenAI if Vertex AI failed
+    if query_embedding is None:
+        try:
+            api_key = None
+            try:
+                api_key = st.secrets["OPENAI_API_KEY"]
+            except:
+                api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                return [{"error": "OpenAI API key not configured. Please add OPENAI_API_KEY to secrets."}]
+            
+            print("Using OpenAI for embeddings...")
+            client = OpenAI(api_key=api_key)
+            response = client.embeddings.create(
+                input=query_string,
+                model="text-embedding-3-small",
+                dimensions=768
+            )
+            query_embedding = response.data[0].embedding
+            embedding_source = "OpenAI"
+        except Exception as e:
+            return [{"error": f"Both Vertex AI and OpenAI failed: {e}"}]
+    
+    if query_embedding is None:
+        return [{"error": "Failed to generate embeddings."}]
+    
+    # Perform vector search
     pipeline = [
         {"$vectorSearch": {
             "index": "vector_index", "path": "text_embedding",
@@ -91,9 +131,12 @@ def perform_vector_search(query_string: str, collection, limit=10):
             "factors": 1, "study_link": 1, "score": { "$meta": "vectorSearchScore" }
         }}
     ]
+    
     try:
         results = collection.aggregate(pipeline)
-        return list(results)
+        results_list = list(results)
+        print(f"✅ Vector search successful using {embedding_source}")
+        return results_list
     except Exception as e:
         return [{"error": f"Vector search failed: {e}"}]
 

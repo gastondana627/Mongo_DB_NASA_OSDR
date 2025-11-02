@@ -107,5 +107,58 @@ This covers the complete process of setting up the project from scratch on a loc
 * **User Accounts:** Integrate Firebase Authentication to allow users to save their research sessions, favorite studies, and store AI-generated insights.
 * **Advanced Analytics:** Use Google BigQuery and Looker Studio to create and embed high-level dashboards analyzing trends across the entire dataset.
 
+
+
+## 🧰 Local Database Restore
+
+To restore the Neo4j database locally from a `.backup` file:
+
+1. Stop Neo4j Desktop instance.
+2. Run the restore command:
+
+"/path/to/neo4j-admin" database restore neo4j
+--from-path=/path/to/neo4j-backup.backup
+--overwrite-destination
+
+text
+
+3. Start Neo4j Desktop instance.
+4. Verify with Cypher query:
+
+MATCH (n) RETURN count(n);
+
+text
+
+5. Add your MongoDB and Neo4j connection details to a `secrets.toml` file in `.streamlit` directory:
+
+[neo4j]
+uri = "bolt://localhost:7687"
+user = "neo4j"
+password = "your_password"
+
+[mongodb]
+uri = "your_mongodb_uri"
+
+text
+
+## 🐳 Docker Configuration for Local and Production
+
+Use environment variables to switch between local and cloud Neo4j instances. In your Docker setup and Streamlit app:
+
+- Read environment variables for Neo4j URI, user, and password.
+- Default to local values if none provided.
+- Update your deployment pipeline to set correct env vars for production.
+
+---
+
+This plan lets you finalize the local testing phase robustly and advance confidently to production deployment when ready.
+
+You're almost through infrastructure obstacles, fresh progress will come now.
+
+🚀
+
+
+
+
 ---
 This project was developed by Gaston D. / GASTONDANA627 for the **AI in Action Hackathon by Google Cloud and MongoDB**.
