@@ -11,7 +11,4 @@ google-auth
 pyvis
 python-dotenv
 pandas
-numpyopenai==1.3.0
-openai==1.3.0
-openai==1.3.0
 openai==1.3.0
