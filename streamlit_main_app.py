@@ -22,6 +22,11 @@ import certifi
 load_dotenv()
 
 # === Streamlit Page Config (MUST BE FIRST) ===
+import logging
+import sys
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(name)s] %(message)s', stream=sys.stdout)
+logger = logging.getLogger("OSDR")
+
 st.set_page_config(page_title="NASA OSDR Explorer", layout="wide", initial_sidebar_state="expanded")
 
 # === Import Custom Functions ===
@@ -89,7 +94,7 @@ def get_mongo_client():
         client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000, tlsCAFile=ca)
         # The ismaster command is cheap and does not require auth.
         client.admin.command('ismaster')
-        print("MongoDB connection successful!")
+        logger.info("✅ MongoDB: Connected")
         return client
     except Exception as e:
         # Custom error with NASA emoji
@@ -248,7 +253,7 @@ try:
     
     # Try to connect
     neo4j_conn = Neo4jConnection()
-    print(f"🔍 Debug: Neo4j URI = {neo4j_conn.uri}")
+    logger.info(f"Neo4j: {neo4j_conn.uri}")
     neo4j_enabled = neo4j_conn.connect()
     
 except Exception as e:
@@ -262,7 +267,7 @@ with st.sidebar:
     with col2:
         st.markdown("<h2 style='text-align: center;'>OSDR Explorer</h2>", unsafe_allow_html=True)
         if st.session_state.home_link_nav_icon and os.path.exists(st.session_state.home_link_nav_icon):
-            st.image(st.session_state.home_link_nav_icon, width=76, use_container_width=False)
+            st.image(st.session_state.home_link_nav_icon, width=76)
     
     st.markdown("---")
     
@@ -270,7 +275,7 @@ with st.sidebar:
     with col2:
         st.markdown("<h3 style='text-align: center;'>Admin Tools</h3>", unsafe_allow_html=True)
     
-    if st.button("Clear App Cache & State", key="clear_cache_state_btn", use_container_width=True):
+    if st.button("Clear App Cache & State", key="clear_cache_state_btn", width="stretch"):
         st.cache_data.clear()
         st.cache_resource.clear()
         if neo4j_conn:
@@ -295,11 +300,11 @@ with st.sidebar:
 app_title_cols = st.columns([1, 8, 1], gap="small")
 with app_title_cols[0]:
     if st.session_state.app_title_emoji_left and os.path.exists(st.session_state.app_title_emoji_left):
-        st.image(st.session_state.app_title_emoji_left, width=80, use_container_width=False)
+        st.image(st.session_state.app_title_emoji_left, width=80)
 app_title_cols[1].title("NASA OSDR Explorer", anchor=False)
 with app_title_cols[2]:
     if st.session_state.app_title_emoji_right and os.path.exists(st.session_state.app_title_emoji_right):
-        st.image(st.session_state.app_title_emoji_right, width=80, use_container_width=False)
+        st.image(st.session_state.app_title_emoji_right, width=80)
 st.markdown("Extract, explore, and visualize data from NASA's Open Science Data Repository.")
 
 # === Tabs ===
@@ -347,8 +352,12 @@ with tab_ai_search:
                         with view_cols[1]:
                             if st.button("View Knowledge Graph", key=f"kg_view_ai_{item.get('study_id')}"):
                                 st.session_state.selected_study_for_kg = item.get('study_id')
-                                st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
-                                st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab to view.")
+                                st.session_state.graph_html = None
+                                st.session_state.kg_study_ids = []
+                                st.session_state.ai_comparison_text = None
+                                logger.info(f"🔗 KG: Study {item.get('study_id')} selected from AI search")
+                                st.success(f"✅ Study loaded. Go to Knowledge Graph tab.")
+                                st.rerun()
 
 # === Keyword Search Tab ===
 with tab_explorer:
