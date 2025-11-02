@@ -446,300 +446,37 @@ with tab_explorer:
 
 # === Knowledge Graph Tab ===
 with tab_kg:
-    # Custom header with NASA emoji
-    header_cols = st.columns([1, 10])
-    with header_cols[0]:
-        st.image(get_custom_emoji_for_context("knowledge_graph"), width=40)
-    with header_cols[1]:
-        st.header("Enhanced Knowledge Graph Explorer")
-    if not neo4j_enabled: 
-        # Custom error with NASA emoji
-        error_cols = st.columns([1, 20])
-        with error_cols[0]:
-            st.image(get_custom_emoji_for_context("error"), width=20)
-        with error_cols[1]:
-            st.error("Neo4j features disabled.")
-    else:
-        # Import the Cypher editor
-        try:
-            from cypher_editor import cypher_editor
-            from enhanced_neo4j_executor import neo4j_executor
-            
-            # Create two-column layout: Cypher editor on left, graph on right
-            editor_col, graph_col = st.columns([1, 2], gap="medium")
-            
-            with editor_col:
-                st.subheader("Cypher Query Interface")
-                
-                # Render the Cypher editor with fallback
+    st.subheader("Cypher Query Interface")
+    
+    # Query editor
+    current_query = st.text_area("Enter Cypher Query:", height=150, placeholder="MATCH (n) RETURN n LIMIT 10")
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("Execute Query"):
+            with st.spinner("Executing..."):
                 try:
-                    current_query = st.text_area("Enter Cypher Query:", height=150, placeholder="MATCH (n) RETURN n LIMIT 10")
-                    execute_clicked = st.button("Execute Query", key="execute_cypher")
-                except Exception as e:
-                    st.warning(f"⚡ Cypher editor error: {str(e)[:100]}")
-                    current_query, execute_clicked = None, False
-            
-            # Handle query execution
-            if execute_clicked and current_query.strip():
-                with st.spinner("Executing query..."):
-                    # Execute the query using the enhanced executor
                     result = neo4j_executor.execute_query(current_query)
-                    
-                    # Add to history with detailed metadata
-                    cypher_editor.add_to_history(
-                        query=current_query,
-                        execution_time_ms=result.execution_time,
-                        result_count=len(result.data) if result.data else 0,
-                        success=result.success,
-                        error_message=result.error_message if not result.success else None
-                    )
-                    
-                    # Save query state to session manager
-                    from session_manager import session_manager
-                    session_manager.save_query_state(
-                        query=current_query,
-                        results={
-                            "success": result.success,
-                            "execution_time": result.execution_time,
-                            "data_count": len(result.data) if result.data else 0,
-                            "result_type": getattr(result, 'result_type', 'unknown')
-                        }
-                    )
-                    
                     if result.success:
-                        # Store results in session state for visualization
                         st.session_state.cypher_query_result = result
-                        st.session_state.cypher_query_executed = current_query
-                        
-                        # Custom success with NASA emoji
-                        success_cols = st.columns([1, 20])
-                        with success_cols[0]:
-                            st.image(get_custom_emoji_for_context("success"), width=20)
-                        with success_cols[1]:
-                            st.success(f"Query executed successfully in {result.execution_time:.0f}ms")
-                        
-                        # Show performance warning if needed
-                        if result.warning_message:
-                            warning_cols = st.columns([1, 20])
-                            with warning_cols[0]:
-                                st.image(get_custom_emoji_for_context("warning"), width=20)
-                            with warning_cols[1]:
-                                st.warning(result.warning_message)
+                        st.success(f"Query executed in {result.execution_time:.0f}ms")
+                        if result.data:
+                            st.json(result.data[:10])  # Show first 10 results
                     else:
-                        # Custom error with NASA emoji
-                        error_cols = st.columns([1, 20])
-                        with error_cols[0]:
-                            st.image(get_custom_emoji_for_context("error"), width=20)
-                        with error_cols[1]:
-                            st.error(f"Query failed: {result.error_message}")
-                        st.session_state.cypher_query_result = None
-        
-        with graph_col:
-            # Custom subheader with NASA emoji
-            subheader_cols = st.columns([1, 10])
-            with subheader_cols[0]:
-                st.image(get_custom_emoji_for_context("chart"), width=30)
-            with subheader_cols[1]:
-                st.subheader("Query Results & Visualization")
-            
-            # Check if we have query results to display
-            if hasattr(st.session_state, 'cypher_query_result') and st.session_state.cypher_query_result:
-                result = st.session_state.cypher_query_result
-                
-                # Use the enhanced results formatter
-                from results_formatter import results_formatter
-                formatted_results = results_formatter.format_results(result)
-                
-                # Render the formatted results
-                results_formatter.render_results_display(formatted_results)
-                
-                # Add node interaction panel if we have graph results
-                if formatted_results.result_type.value in ['graph', 'mixed'] and formatted_results.graph_html:
-                    st.markdown("---")
-                    
-                    # Node interaction section
-                    from node_click_handler import node_click_handler
-                    
-                    # Custom subheader with NASA emoji
-                    target_cols = st.columns([1, 10])
-                    with target_cols[0]:
-                        st.image(get_custom_emoji_for_context("target"), width=30)
-                    with target_cols[1]:
-                        st.subheader("Interactive Node Exploration")
-                    
-                    # Create sample node interaction for demonstration
-                    demo_cols = st.columns(2)
-                    
-                    with demo_cols[0]:
-                        # Custom info with NASA emoji
-                        info_cols = st.columns([1, 20])
-                        with info_cols[0]:
-                            st.image(get_custom_emoji_for_context("lightbulb"), width=20)
-                        with info_cols[1]:
-                            st.info("**Click on nodes in the graph above to generate contextual queries**")
-                        
-                        # Show sample queries for demonstration
-                        rocket_cols = st.columns([1, 10])
-                        with rocket_cols[0]:
-                            st.image(get_custom_emoji_for_context("rocket"), width=25)
-                        with rocket_cols[1]:
-                            st.markdown("### Try These Sample Queries:")
-                        sample_queries = node_click_handler.create_sample_queries_for_demo()
-                        
-                        for sample in sample_queries[:2]:  # Show first 2 samples
-                            # Custom button with NASA emoji
-                            doc_cols = st.columns([1, 10])
-                            with doc_cols[0]:
-                                st.image(get_custom_emoji_for_context("document"), width=15)
-                            with doc_cols[1]:
-                                if st.button(sample['title'], key=f"sample_{sample['title'].replace(' ', '_')}"):
-                                    cypher_editor.set_query(sample['query'])
-                                    st.success(f"Query loaded: {sample['description']}")
-                                    st.rerun()
-                    
-                    with demo_cols[1]:
-                        # Manual node exploration
-                        # Custom header with NASA emoji
-                        mag_cols = st.columns([1, 10])
-                        with mag_cols[0]:
-                            st.image(get_custom_emoji_for_context("magnifying"), width=25)
-                        with mag_cols[1]:
-                            st.markdown("### Manual Node Exploration")
-                        
-                        # Example node types for manual exploration
-                        node_type = st.selectbox(
-                            "Select node type to explore:",
-                            ["Study", "Organism", "Factor", "Assay"],
-                            key="manual_node_type"
-                        )
-                        
-                        if node_type == "Study":
-                            node_value = st.text_input("Study ID:", placeholder="e.g., OSD-840", key="manual_study_id")
-                            if node_value and st.button("Generate Study Queries", key="gen_study_queries"):
-                                properties = {"study_id": node_value}
-                                selected_query = node_click_handler.render_node_interaction_panel(
-                                    node_value, node_type, properties
-                                )
-                                if selected_query:
-                                    cypher_editor.set_query(selected_query)
-                                    st.rerun()
-                        
-                        elif node_type in ["Organism", "Factor", "Assay"]:
-                            name_field = f"{node_type.lower()}_name"
-                            node_value = st.text_input(f"{node_type} name:", placeholder=f"e.g., mouse, spaceflight", key=f"manual_{node_type.lower()}")
-                            if node_value and st.button(f"Generate {node_type} Queries", key=f"gen_{node_type.lower()}_queries"):
-                                properties = {name_field: node_value, "name": node_value}
-                                selected_query = node_click_handler.render_node_interaction_panel(
-                                    node_value, node_type, properties
-                                )
-                                if selected_query:
-                                    cypher_editor.set_query(selected_query)
-                                    st.rerun()
-            
-            # Legacy graph functionality (for backward compatibility)
-            elif st.session_state.get('selected_study_for_kg'):
-                selected_study_id = st.session_state.get('selected_study_for_kg')
-                
-                if st.session_state.graph_html is None:
-                    with st.spinner(f"Generating base graph for {selected_study_id}..."):
-                        html, ids = build_and_display_study_graph(selected_study_id)
-                        st.session_state.graph_html, st.session_state.kg_study_ids = html, ids
-                
-                st.subheader(f"Legacy Graph View: {', '.join(st.session_state.kg_study_ids)}")
-                if st.session_state.graph_html: 
-                    st.components.v1.html(st.session_state.graph_html, height=600, scrolling=True)
-                
-                # Legacy interactive queries
-                st.markdown("---")
-                st.subheader("Quick Actions")
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    if st.button("Find Similar Study (Organism)"):
-                        with st.spinner("Querying..."):
-                            html, ids = find_similar_studies_by_organism(selected_study_id)
-                        if not html or not ids:
-                            st.error("❌ Error: No similar studies found.")
-                        else:
-                            st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
-                        st.rerun()
-                with col2:
-                    if st.button("Expand Connections"):
-                        with st.spinner("Querying..."):
-                            html, ids = expand_second_level_connections(selected_study_id)
-                            st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
-                        st.rerun()
-                with col3:
-                     if st.button("Reset Graph"):
-                        with st.spinner("Resetting..."):
-                            html, ids = build_and_display_study_graph(selected_study_id)
-                            st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
-                        st.rerun()
-                
-                # AI Analysis
-                st.markdown("---")
-                # Custom subheader with NASA emoji
-                robot_cols = st.columns([1, 10])
-                with robot_cols[0]:
-                    st.image(get_custom_emoji_for_context("robot"), width=30)
-                with robot_cols[1]:
-                    st.subheader("AI-Powered Analysis")
-                if len(st.session_state.kg_study_ids) == 2:
-                    if st.button(f"Compare {st.session_state.kg_study_ids[0]} & {st.session_state.kg_study_ids[1]} with AI"):
-                        with st.spinner("Calling Google Gemini to analyze..."):
-                            docs = list(studies_collection.find({"study_id": {"$in": st.session_state.kg_study_ids}}, {"_id": 0, "study_id": 1, "title": 1, "description": 1}))
-                            if len(docs) == 2:
-                                d1 = f"ID: {docs[0].get('study_id')}, Title: {docs[0].get('title')}, Desc: {docs[0].get('description')}"
-                                d2 = f"ID: {docs[1].get('study_id')}, Title: {docs[1].get('title')}, Desc: {docs[1].get('description')}"
-                                st.session_state.ai_comparison_text = get_ai_comparison(d1, d2)
-                            else: st.session_state.ai_comparison_text = "Error: Could not retrieve details for both studies."
-                        st.rerun()
-                if st.session_state.ai_comparison_text:
-                    # Custom info with NASA emoji
-                    gemini_cols = st.columns([1, 20])
-                    with gemini_cols[0]:
-                        st.image(get_custom_emoji_for_context("robot"), width=20)
-                    with gemini_cols[1]:
-                        st.info("Gemini Analysis:")
-                    st.markdown(st.session_state.ai_comparison_text)
-                
-                # Clear controls
-                st.markdown("---")
-                if st.button("Clear Graph View"):
-                    st.session_state.selected_study_for_kg, st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, None, [], None
-                    st.rerun()
-            
-            else:
-                # Custom info with NASA emoji
-                start_cols = st.columns([1, 20])
-                with start_cols[0]:
-                    st.image(get_custom_emoji_for_context("lightbulb"), width=20)
-                with start_cols[1]:
-                    st.info("**Get Started:**\n\n1. Use the Cypher editor on the left to write custom queries\n2. Or find a study using the search tabs and select 'View Knowledge Graph'\n3. Click 'Execute Query' to see results here")
-                
-                # Show sample queries
-                sample_cols = st.columns([1, 10])
-                with sample_cols[0]:
-                    st.image(get_custom_emoji_for_context("rocket"), width=25)
-                with sample_cols[1]:
-                    st.markdown("### Sample Queries to Try:")
-                sample_queries = [
-                    ("Find all studies", "MATCH (s:Study) RETURN s LIMIT 10"),
-                    ("Studies with mice", "MATCH (s:Study)-[:HAS_ORGANISM]->(o:Organism) WHERE o.organism_name CONTAINS 'mouse' RETURN s, o LIMIT 5"),
-                    ("Spaceflight studies", "MATCH (s:Study)-[:HAS_FACTOR]->(f:Factor) WHERE f.factor_name CONTAINS 'spaceflight' RETURN s, f LIMIT 5"),
-                    ("Study connections", "MATCH (s:Study)-[r]-(n) WHERE s.study_id = 'OSD-840' RETURN s, r, n LIMIT 20")
-                ]
-                
-                for title, query in sample_queries:
-                    # Custom button with NASA emoji
-                    query_cols = st.columns([1, 10])
-                    with query_cols[0]:
-                        st.image(get_custom_emoji_for_context("document"), width=15)
-                    with query_cols[1]:
-                        if st.button(title, key=f"sample_{title.replace(' ', '_')}"):
-                            cypher_editor.set_query(query)
-                            st.rerun()
+                        st.error(f"Query error: {result.error_message}")
+                except Exception as e:
+                    st.error(f"Execution error: {str(e)}")
+    
+    with col2:
+        if st.button("Clear Results"):
+            st.session_state.cypher_query_result = None
+            st.rerun()
+    
+    with col3:
+        if st.button("Sample Query"):
+            st.session_state.current_query = "MATCH (s:Study) RETURN s LIMIT 10"
+            st.rerun()
 
-# === Data & Setup Tab ===
 with tab_extract:
     # Custom header with NASA emoji
     header_cols = st.columns([1, 10])
