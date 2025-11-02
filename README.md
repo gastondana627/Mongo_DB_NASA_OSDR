@@ -180,7 +180,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 Create .env file with local credentials:
-MONGO_URI=mongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/?retryWrites=true&w=majority&appName=NASA-OSDR-MongoDB
+MONGO_URI=mongodb+srv://USERNAME:PASSWORD@nasa-osdr-mongodb.gd5tnsw.mongodb.net/?retryWrites=truemongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/?retryWrites=true&w=majority&appName=NASA-OSDR-MongoDBw=majority
 NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=your_local_neo4j_password
@@ -232,7 +232,7 @@ Navigate to astroarchive.streamlit.app > Settings (gear icon) > Secrets and add:
 OPENAI_API_KEY = "sk-proj-your-key-here"
 GCP_PROJECT_ID = "nasa-osdr-mongo"
 GCP_LOCATION = "us-central1"
-MONGO_URI = "mongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/..."
+MONGO_URI = "mongodb+srv://USERNAME:PASSWORD@nasa-osdr-mongodb.gd5tnsw.mongodb.net/?retryWrites=truemongodb+srv://nasa_user:NasaUser100!!@nasa-osdr-mongodb.gd5tnsw.mongodb.net/..."w=majority
 
 What Works in Production:
 
