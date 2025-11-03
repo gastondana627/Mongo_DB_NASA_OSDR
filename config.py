@@ -4,32 +4,35 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Better environment detection
-IS_LOCAL = not os.path.exists("/mount/src")  # Streamlit Cloud = /mount/src exists
-# OR detect via Streamlit's internal
-try:
-    IS_LOCAL = not st.get_option("logger.level")  # Will error in local
-except:
-    IS_LOCAL = True
+# Detect environment: True if local (no /mount/src), False if cloud
+IS_LOCAL = not os.path.exists("/mount/src")
 
-# MongoDB
-MONGO_URI = os.getenv("MONGO_URI")
-
-# Neo4j
 if IS_LOCAL:
+    # Local: Use .env or Docker defaults
     NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
     NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "")
+    NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password123")  # Your Docker password
+    # Set local env var for backward compatibility
+    os.environ["NEO4J_LOCAL_URI"] = NEO4J_URI
 else:
-    # Production: st.secrets
+    # Production: Force secrets (no local fallback)
     try:
         NEO4J_URI = st.secrets["NEO4J_URI"]
-        NEO4J_USER = st.secrets.get("NEO4J_USER", "neo4j")
+        NEO4J_USER = st.secrets["NEO4J_USER"]
         NEO4J_PASSWORD = st.secrets["NEO4J_PASSWORD"]
-    except:
+        # Override any local env
+        os.environ["NEO4J_LOCAL_URI"] = NEO4J_URI
+        print(f"[OSDR] Production Neo4j URI forced: {NEO4J_URI}")  # Debug log
+    except KeyError as e:
+        st.error(f"Missing secret: {e}")
         NEO4J_URI = None
         NEO4J_USER = None
         NEO4J_PASSWORD = None
 
-print(f"🔧 Running in {'LOCAL' if IS_LOCAL else 'PRODUCTION'} mode")
-print(f"[OSDR] Neo4j: {NEO4J_URI}")
+# MongoDB (unchanged, works everywhere)
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/osdr")
+if not IS_LOCAL:
+    MONGO_URI = st.secrets.get("MONGO_URI", MONGO_URI)
+
+# OpenAI: Ensure no proxies passed
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY") if IS_LOCAL else st.secrets.get("OPENAI_API_KEY")
