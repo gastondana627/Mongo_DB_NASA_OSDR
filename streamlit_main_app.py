@@ -432,7 +432,17 @@ with tab_kg:
         with error_cols[0]:
             st.image(get_custom_emoji_for_context("error"), width=20)
         with error_cols[1]:
-            st.error("Neo4j features disabled.")
+            st.warning("⚠️ Neo4j Unavailable (Production Mode)")
+        st.info("Knowledge Graph visualization requires Neo4j. Local deployment shows full relationship maps. Viewing study metadata instead...")
+        
+        if "selected_study" in st.session_state and st.session_state["selected_study"]:
+            study = st.session_state["selected_study"]
+            st.subheader(f"Study: {study.get('study_id', 'Unknown')}")
+            st.write(f"**Title:** {study.get('title', 'N/A')}")
+            st.write(f"**Description:** {study.get('description', 'N/A')[:500]}")
+            st.caption("⚠️ Relationships unavailable without Neo4j")
+        else:
+            st.info("Select a study from AI Semantic Search or Study Explorer to view its metadata.")
     else:
         # Import the Cypher editor
         from cypher_editor import cypher_editor
