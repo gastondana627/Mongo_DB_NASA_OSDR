@@ -291,7 +291,7 @@ with st.sidebar:
     with col2:
         st.markdown("<h3 style='text-align: center;'>Database Status</h3>", unsafe_allow_html=True)
     
-    if neo4j_enabled and neo4j_conn and neo4j_conn.connected:
+    if neo4j_conn and neo4j_conn.connected:
         st.success("✅ Neo4j: Connected")
     else:
         st.info("⚠️ Neo4j: Offline (optional)")
