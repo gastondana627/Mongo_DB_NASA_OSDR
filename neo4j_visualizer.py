@@ -58,26 +58,20 @@ def _build_graph_from_records(records):
 
 def run_graph_query(query: str, params: dict = None):
     """
-    Runs a query against the Neo4j database using credentials from st.secrets.
+    Runs a query against the Neo4j database using centralized configuration.
     """
     driver = None
     try:
-        # Check if Neo4j secrets are available
-        if not hasattr(st.secrets, 'neo4j'):
-            return [{"error": "Neo4j credentials not found in Streamlit secrets. Please configure Neo4j connection in your app settings."}]
-        
-        # Accessing credentials from .env
-        uri = os.getenv("NEO4J_LOCAL_URI", "bolt://localhost:7687")
-        user = os.getenv("NEO4J_LOCAL_USER", "neo4j")
-        password = os.getenv("NEO4J_LOCAL_PASSWORD", "")
+        # Import here to avoid circular imports
+        from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_ENV_TYPE
         
         # Validate connection parameters
-        if not all([uri, user, password]):
-            return [{"error": "Neo4j connection parameters are incomplete. Please check URI, USER, and PASSWORD in secrets."}]
+        if not all([NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD]):
+            return [{"error": f"Neo4j connection parameters are incomplete. Environment: {NEO4J_ENV_TYPE}"}]
         
         driver = GraphDatabase.driver(
-            uri, 
-            auth=(user, password), 
+            NEO4J_URI, 
+            auth=(NEO4J_USER, NEO4J_PASSWORD), 
             max_connection_lifetime=360, 
             connection_timeout=30
         )

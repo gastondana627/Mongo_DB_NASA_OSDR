@@ -90,16 +90,17 @@ class EnhancedNeo4jExecutor:
         self.large_result_threshold = 50
         
     def _get_connection_config(self) -> Dict[str, Any]:
-        """Get Neo4j connection configuration from Streamlit secrets"""
+        """Get Neo4j connection configuration from centralized config"""
         try:
+            from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
             return {
-                'uri': st.secrets.neo4j.URI,
-                'user': st.secrets.neo4j.USER,
-                'password': st.secrets.neo4j.PASSWORD
+                'uri': NEO4J_URI,
+                'user': NEO4J_USER,
+                'password': NEO4J_PASSWORD
             }
         except Exception as e:
             logger.error(f"Failed to load Neo4j credentials: {e}")
-            raise ConnectionError("Neo4j credentials not found in Streamlit secrets")
+            raise ConnectionError("Neo4j credentials not found in configuration")
     
     def _create_driver(self) -> GraphDatabase.driver:
         """Create Neo4j driver with connection pooling and resilience settings"""

@@ -225,19 +225,28 @@ try:
     
     class Neo4jConnection:
         def __init__(self):
-            self.uri = os.getenv("NEO4J_LOCAL_URI", "bolt://localhost:7687")
-            self.user = os.getenv("NEO4J_LOCAL_USER", "neo4j")
-            self.password = os.getenv("NEO4J_LOCAL_PASSWORD", "")
+            # Use centralized configuration
+            from config import NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD
+            self.uri = NEO4J_URI
+            self.user = NEO4J_USER
+            self.password = NEO4J_PASSWORD
             self.driver = None
             self.connected = False
         
         def connect(self):
             try:
-                self.driver = GraphDatabase.driver(
-                    self.uri,
-                    auth=(self.user, self.password),
-                    encrypted="neo4j+s" in self.uri
-                )
+                # For neo4j+s:// URIs, encryption is implicit, don't pass encrypted parameter
+                if "neo4j+s" in self.uri or "bolt+s" in self.uri:
+                    self.driver = GraphDatabase.driver(
+                        self.uri,
+                        auth=(self.user, self.password)
+                    )
+                else:
+                    self.driver = GraphDatabase.driver(
+                        self.uri,
+                        auth=(self.user, self.password),
+                        encrypted=False
+                    )
                 with self.driver.session() as session:
                     session.run("RETURN 1")
                 self.connected = True
@@ -275,7 +284,7 @@ with st.sidebar:
     with col2:
         st.markdown("<h3 style='text-align: center;'>Admin Tools</h3>", unsafe_allow_html=True)
     
-    if st.button("Clear App Cache & State", key="clear_cache_state_btn", width="stretch"):
+    if st.button("Clear App Cache & State", key="clear_cache_state_btn", use_container_width=True):
         st.cache_data.clear()
         st.cache_resource.clear()
         if neo4j_conn:
