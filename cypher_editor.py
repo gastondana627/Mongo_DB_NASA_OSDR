@@ -94,7 +94,19 @@ class CypherEditor:
     
     def _get_state(self) -> CypherEditorState:
         """Get the current editor state"""
-        return st.session_state[self.session_key]
+        try:
+            # Ensure session state exists
+            if self.session_key not in st.session_state:
+                st.session_state[self.session_key] = CypherEditorState()
+            return st.session_state[self.session_key]
+        except (KeyError, AttributeError, Exception):
+            # Fallback: create new state if anything goes wrong
+            new_state = CypherEditorState()
+            try:
+                st.session_state[self.session_key] = new_state
+            except Exception:
+                pass  # If we can't even set session state, just return the new state
+            return new_state
     
     def _update_state(self, **kwargs):
         """Update the editor state"""
@@ -140,39 +152,56 @@ class CypherEditor:
     
     def render_editor(self) -> str:
         """Render the main Cypher editor with syntax highlighting"""
-        state = self._get_state()
-        
-        st.subheader("⚡ Cypher Query Editor")
-        
-        # Editor configuration
-        editor_config = {
-            'language': 'sql',  # Closest to Cypher syntax highlighting
-            'theme': 'monokai',
-            'key': f"{self.session_key}_ace_editor",
-            'height': 200,
-            'auto_update': True,
-            'font_size': 14,
-            'tab_size': 2,
-            'wrap': True,
-            'annotations': None,
-            'markers': None
-        }
-        
-        # Render the ACE editor
-        current_query = st_ace(
-            value=state.current_query,
-            placeholder="Enter your Cypher query here...\n\nExample:\nMATCH (s:Study) WHERE s.study_id = 'OSD-840' RETURN s",
-            **editor_config
-        )
-        
-        # Update state if query changed
-        if current_query != state.current_query:
-            self._update_state(current_query=current_query)
-            # Perform live validation
-            validation = self._validate_query_live(current_query)
-            self._update_state(last_validation=validation)
-        
-        return current_query
+        try:
+            state = self._get_state()
+            
+            st.subheader("⚡ Cypher Query Editor")
+            
+            # Editor configuration
+            editor_config = {
+                'language': 'sql',  # Closest to Cypher syntax highlighting
+                'theme': 'monokai',
+                'key': f"{self.session_key}_ace_editor",
+                'height': 200,
+                'auto_update': True,
+                'font_size': 14,
+                'tab_size': 2,
+                'wrap': True,
+                'annotations': None,
+                'markers': None
+            }
+            
+            # Render the ACE editor
+            current_query = st_ace(
+                value=state.current_query,
+                placeholder="Enter your Cypher query here...\n\nExample:\nMATCH (s:Study) WHERE s.study_id = 'OSD-840' RETURN s",
+                **editor_config
+            )
+            
+            # Update state if query changed
+            if current_query != state.current_query:
+                self._update_state(current_query=current_query)
+                # Perform live validation
+                validation = self._validate_query_live(current_query)
+                self._update_state(last_validation=validation)
+            
+            return current_query
+            
+        except Exception as e:
+            # Fallback editor if ACE editor fails
+            st.warning(f"Advanced editor unavailable: {str(e)}")
+            st.subheader("📝 Simple Query Editor")
+            
+            # Simple text area fallback
+            current_query = st.text_area(
+                "Enter Cypher Query:",
+                value="MATCH (n) RETURN n LIMIT 10",
+                height=200,
+                key=f"{self.session_key}_simple_editor",
+                placeholder="Enter your Cypher query here..."
+            )
+            
+            return current_query
     
     def render_validation_indicators(self):
         """Render query validation status and suggestions"""
@@ -322,37 +351,54 @@ class CypherEditor:
     
     def render_complete_editor(self) -> tuple[str, bool]:
         """Render the complete editor interface. Returns (query, execute_clicked)"""
-        # Render all components
-        self.render_query_templates()
-        st.markdown("---")
-        
-        # Enhanced session management interface (if available)
         try:
-            session_result = session_manager.render_complete_session_interface()
+            # Render all components
+            self.render_query_templates()
+            st.markdown("---")
             
-            # Handle session navigation/restoration
-            if session_result.get("navigation_query"):
-                self._update_state(current_query=session_result["navigation_query"])
-            elif session_result.get("restored_query"):
-                self._update_state(current_query=session_result["restored_query"])
-        except (KeyError, AttributeError):
-            # Session manager not available, use basic history controls
-            self.render_history_controls()
-        
-        st.markdown("---")
-        
-        current_query = self.render_editor()
-        
-        st.markdown("---")
-        self.render_validation_indicators()
-        
-        st.markdown("---")
-        execute_clicked = self.render_execute_controls()
-        
-        st.markdown("---")
-        self.render_help_section()
-        
-        return current_query, execute_clicked
+            # Enhanced session management interface (if available)
+            try:
+                session_result = session_manager.render_complete_session_interface()
+                
+                # Handle session navigation/restoration
+                if session_result.get("navigation_query"):
+                    self._update_state(current_query=session_result["navigation_query"])
+                elif session_result.get("restored_query"):
+                    self._update_state(current_query=session_result["restored_query"])
+            except (KeyError, AttributeError):
+                # Session manager not available, use basic history controls
+                self.render_history_controls()
+            
+            st.markdown("---")
+            
+            current_query = self.render_editor()
+            
+            st.markdown("---")
+            self.render_validation_indicators()
+            
+            st.markdown("---")
+            execute_clicked = self.render_execute_controls()
+            
+            st.markdown("---")
+            self.render_help_section()
+            
+            return current_query, execute_clicked
+            
+        except Exception as e:
+            # Fallback interface if anything goes wrong
+            st.error(f"Cypher editor error: {str(e)}")
+            st.info("Using simplified query interface...")
+            
+            # Simple fallback interface
+            query = st.text_area(
+                "Enter Cypher Query:", 
+                value="MATCH (n) RETURN n LIMIT 10",
+                height=200,
+                key="fallback_cypher_query"
+            )
+            execute_clicked = st.button("Execute Query", key="fallback_cypher_execute")
+            
+            return query, execute_clicked
 
 # Global instance for the application
 cypher_editor = CypherEditor()

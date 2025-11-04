@@ -1,6 +1,14 @@
 
 # NASA OSDR AI Explorer
 
+## 🔬 Research Tool Disclaimer
+
+**Important Notice:**
+- Unofficial community project, not affiliated with NASA/GeneLab
+- For research exploration - verify critical data with official sources  
+- Built using public OSDR APIs - respects all data usage policies
+- Open source - community contributions welcome
+
 ## 🚀 Project Overview
 
 The **NASA OSDR AI Explorer** is a cloud-native web application designed to unlock novel insights from NASA's Open Science Data Repository (OSDR). The project addresses the challenge of navigating vast and complex scientific datasets by transforming flat research data into an intuitive, multi-faceted exploration tool. It leverages a sophisticated architecture combining multiple databases, a containerized deployment, and a powerful AI-driven search and analysis engine built on Google Cloud's Vertex AI.
