@@ -316,8 +316,16 @@ with app_title_cols[2]:
         st.image(st.session_state.app_title_emoji_right, width=80)
 st.markdown("Extract, explore, and visualize data from NASA's Open Science Data Repository.")
 
-# === Tabs ===
-tab_ai_search, tab_explorer, tab_kg, tab_extract = st.tabs(["AI Semantic Search", "Study Explorer", "Knowledge Graph", "Data & Setup"])
+# === Enhanced Tabs for Research Value ===
+tab_ai_search, tab_explorer, tab_kg, tab_realtime, tab_analytics, tab_ontology, tab_extract = st.tabs([
+    "🔍 AI Semantic Search", 
+    "📚 Study Explorer", 
+    "🕸️ Knowledge Graph", 
+    "🌍 Real-Time Data",
+    "📊 Research Analytics", 
+    "🧬 Ontology Browser",
+    "⚙️ Data & Setup"
+])
 
 # === AI Semantic Search Tab (DISABLED - GCP permissions pending) ===
 with tab_ai_search:
@@ -727,6 +735,41 @@ with tab_kg:
                         if st.button(title, key=f"sample_{title.replace(' ', '_')}"):
                             cypher_editor.set_query(query)
                             st.rerun()
+
+# === Real-Time Data Tab ===
+with tab_realtime:
+    try:
+        from realtime_data_manager import realtime_manager
+        realtime_manager.render_complete_dashboard()
+    except ImportError:
+        st.error("Real-time data manager not available")
+
+# === Research Analytics Tab ===
+with tab_analytics:
+    try:
+        from research_analytics import research_analytics
+        research_analytics.render_complete_analytics_dashboard()
+    except ImportError:
+        st.error("Research analytics not available")
+
+# === Ontology Browser Tab ===
+with tab_ontology:
+    try:
+        from ontology_manager import ontology_manager
+        
+        st.title("🧬 Formal Ontology & Metadata Standards")
+        
+        # Ontology navigation
+        ontology_tab1, ontology_tab2 = st.tabs(["📖 Browse Ontology", "✅ Validate Metadata"])
+        
+        with ontology_tab1:
+            ontology_manager.render_ontology_browser()
+        
+        with ontology_tab2:
+            ontology_manager.render_metadata_validator()
+            
+    except ImportError:
+        st.error("Ontology manager not available")
 
 # === Data & Setup Tab ===
 with tab_extract:
