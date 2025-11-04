@@ -1,20 +1,41 @@
+# Python
 __pycache__/
 *.pyc
-.env
-data/
-.DS_Store
+*.pyo
+*.pyd
+.Python
 
-gcp_credentials.json
-nasa-osdr-mongo-hackathon-key.json
-
+# Virtual environments
 venv/
 venv_nasa/
-.streamlit/secrets.toml
+env/
+ENV/
 
-
-
-# Security/Secrets
-gcp_credentials.json
+# Environment files (NEVER COMMIT THESE)
 .env
 .env.local
+.env.production
+.env.development
+
+# Streamlit secrets (NEVER COMMIT THESE)
 .streamlit/secrets.toml
+
+# Credentials and keys (NEVER COMMIT THESE)
+gcp_credentials.json
+nasa-osdr-mongo-hackathon-key.json
+*.key
+*.pem
+*.p12
+
+# Data files
+data/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo

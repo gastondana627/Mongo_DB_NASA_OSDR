@@ -2,24 +2,30 @@
 
 ## Quick Start
 
-### 1. Check Current Setup
+### 1. Set Up Credentials (First Time Only)
+```bash
+python setup_credentials.py
+```
+This will securely prompt for your credentials and create a `.env` file.
+
+### 2. Check Current Setup
 ```bash
 python startup_check.py
 ```
 
-### 2. Switch Environment (if needed)
+### 3. Switch Environment (if needed)
 ```bash
 # Switch to local Neo4j
 python switch_environment.py local
 
-# Switch to production Neo4j Aura
+# Switch to production Neo4j Aura  
 python switch_environment.py production
 
 # Check current configuration
 python switch_environment.py status
 ```
 
-### 3. Run Application
+### 4. Run Application
 ```bash
 streamlit run streamlit_main_app.py
 ```

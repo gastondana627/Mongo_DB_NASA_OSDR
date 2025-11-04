@@ -18,42 +18,31 @@ def update_env_file(use_local=True):
     
     # Read current content
     with open(env_file, 'r') as f:
-        lines = f.readlines()
+        content = f.read()
     
-    # Configuration options
-    local_config = [
-        "NEO4J_URI=bolt://localhost:7687\n",
-        "NEO4J_USER=neo4j\n", 
-        "NEO4J_PASSWORD=Gas121212\n"
-    ]
-    
-    aura_config = [
-        "NEO4J_URI=neo4j+s://befd9937.databases.neo4j.io:7687\n",
-        "NEO4J_USER=neo4j\n",
-        "NEO4J_PASSWORD=n80rOEUo3DEHIOQkg3VZo4zUT5_cCZy_ioY_jVIZYKY\n"
-    ]
-    
-    # Update lines
-    new_lines = []
-    config_to_use = local_config if use_local else aura_config
-    config_index = 0
-    
-    for line in lines:
-        if line.startswith("NEO4J_URI=") or line.startswith("NEO4J_USER=") or line.startswith("NEO4J_PASSWORD="):
-            if config_index < len(config_to_use):
-                new_lines.append(config_to_use[config_index])
-                config_index += 1
-            else:
-                new_lines.append(line)
-        else:
-            new_lines.append(line)
+    if use_local:
+        # Switch to local configuration
+        new_content = content.replace(
+            'NEO4J_ENV=production', 'NEO4J_ENV=local'
+        ).replace(
+            'NEO4J_ENV=', 'NEO4J_ENV=local'
+        )
+        env_type = "Local Development"
+    else:
+        # Switch to production configuration  
+        new_content = content.replace(
+            'NEO4J_ENV=local', 'NEO4J_ENV=production'
+        ).replace(
+            'NEO4J_ENV=', 'NEO4J_ENV=production'
+        )
+        env_type = "Neo4j Aura (Production)"
     
     # Write updated content
     with open(env_file, 'w') as f:
-        f.writelines(new_lines)
+        f.write(new_content)
     
-    env_type = "Local Development" if use_local else "Neo4j Aura (Production)"
     print(f"✅ Environment switched to: {env_type}")
+    print("⚠️  Make sure your credentials are properly set in .env file")
     return True
 
 def show_current_config():

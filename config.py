@@ -59,7 +59,7 @@ def get_neo4j_config():
     # Check for manual environment override
     neo4j_env = get_config_value("NEO4J_ENV", "").lower()
     
-    # If running on Streamlit Cloud, try secrets first
+    # If running on Streamlit Cloud, try secrets first (unless forced to local)
     if not IS_LOCAL and neo4j_env != "local":
         try:
             uri = get_config_value("NEO4J_URI", secrets_key="neo4j.URI")
