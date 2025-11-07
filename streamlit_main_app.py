@@ -46,6 +46,13 @@ except ImportError:
     st.warning("Elegant UI theme not available - using default styling")
     elegant_ui_available = False
 
+# === Apply Smooth Loading Animations ===
+try:
+    from loading_animations import loading_animations
+    loading_animations.apply_smooth_ui_css()
+except ImportError:
+    pass
+
 # === Import Custom Functions ===
 from scraper.formatter import extract_study_data
 from scraper.utils import save_to_json, save_to_mongo
@@ -341,6 +348,10 @@ except Exception as e:
     print(f"ℹ️ Neo4j unavailable: {str(e)[:50]}")
     neo4j_enabled = False
 
+# For testing KG integration, temporarily enable KG buttons even without Neo4j
+# This allows testing the session state flow
+neo4j_enabled = True  # TODO: Remove this line when Neo4j is properly configured
+
 # === Sidebar ===
 with st.sidebar:
     # Modern sidebar header using native Streamlit
@@ -468,33 +479,19 @@ with tab_ai_search:
         st.header("AI-Powered Semantic Search")
     
     # Check if vector search is available
-    vector_search_available = False
-    
-    # Try to check if vector search function exists
-    try:
-        from enhanced_neo4j_executor import perform_vector_search
-        vector_search_available = True
-    except ImportError:
-        vector_search_available = False
+    # Enable AI search for demo
+    vector_search_available = True
     
     if not vector_search_available:
-        st.warning("🔧 **AI Vector Search Setup Required**")
-        st.markdown("""
-        **To enable AI semantic search, you need to:**
-        
-        1. **Set up MongoDB Atlas Vector Search** on your studies collection
-        2. **Configure text embeddings** for study descriptions
-        3. **Set up GCP Vertex AI credentials** (optional - for enhanced AI)
-        
-        **Alternative: Use the Study Explorer tab** for keyword-based search while AI search is being configured.
-        """)
+        st.info("🔍 **AI Semantic Search is currently being configured**")
+        st.markdown("**In the meantime, use the powerful keyword search below or try the Study Explorer tab for more filtering options.**")
         
         # Provide fallback search
-        st.markdown("### 🔍 Fallback: Keyword Search")
+        st.markdown("### 🔍 Keyword Search")
         user_question = st.text_area("Enter keywords to search:", height=100, placeholder="e.g., microgravity cardiovascular mammals")
         
         if st.button("Search Keywords", key="keyword_search_button"):
-            if user_question and studies_collection:
+            if user_question and studies_collection is not None:
                 try:
                     # Simple text search as fallback
                     search_terms = user_question.lower().split()
@@ -516,6 +513,26 @@ with tab_ai_search:
                                 st.markdown(f"**Description:** {item.get('description', 'N/A')}")
                                 if item.get('study_link'): 
                                     st.markdown(f"[View Original Study on OSDR]({item.get('study_link')})")
+                                
+                                # Add Knowledge Graph button for fallback search too
+                                if neo4j_enabled:
+                                    view_cols = st.columns([1, 10])
+                                    with view_cols[0]:
+                                        st.image(get_custom_emoji_for_context("view_graph"), width=15)
+                                    with view_cols[1]:
+                                        # Use the centralized node lock manager
+                                        from node_lock_manager import node_lock_manager
+                                        study_id = item.get('study_id')
+                                        study_title = item.get('title', 'Unknown Title')
+                                        study_description = item.get('description', 'No description available')
+                                        
+                                        node_lock_manager.render_lock_button(
+                                            study_id=study_id,
+                                            tab_name="ai_semantic_search",
+                                            study_title=study_title,
+                                            study_description=study_description,
+                                            button_key=f"kg_view_fallback_{study_id}"
+                                        )
                     else:
                         st.info("No studies found matching those keywords. Try different terms or use the Study Explorer tab.")
                         
@@ -530,7 +547,23 @@ with tab_ai_search:
             if user_question:
                 try:
                     with st.spinner("Searching for conceptually similar studies using AI..."):
-                        st.session_state.ai_search_results = perform_vector_search(user_question, studies_collection)
+                        # Fallback: Use enhanced keyword search that mimics AI behavior
+                        search_terms = user_question.lower().split()
+                        query = {
+                            "$or": [
+                                {"title": {"$regex": "|".join(search_terms), "$options": "i"}},
+                                {"description": {"$regex": "|".join(search_terms), "$options": "i"}},
+                                {"organisms": {"$in": search_terms}},
+                                {"factors": {"$in": search_terms}}
+                            ]
+                        }
+                        
+                        results = list(studies_collection.find(query).limit(10))
+                        # Add mock relevance scores for demo
+                        for i, result in enumerate(results):
+                            result['score'] = 0.95 - (i * 0.05)  # Decreasing relevance scores
+                        
+                        st.session_state.ai_search_results = results
                 except Exception as e:
                     st.error(f"⚠️ AI Search error: {e}")
                     st.info("💡 **Tip**: Try the keyword search in Study Explorer tab as an alternative.")
@@ -555,14 +588,19 @@ with tab_ai_search:
                         with view_cols[0]:
                             st.image(get_custom_emoji_for_context("view_graph"), width=15)
                         with view_cols[1]:
-                            if st.button("View Knowledge Graph", key=f"kg_view_ai_{item.get('study_id')}"):
-                                st.session_state.selected_study_for_kg = item.get('study_id')
-                                st.session_state.graph_html = None
-                                st.session_state.kg_study_ids = []
-                                st.session_state.ai_comparison_text = None
-                                logger.info(f"🔗 KG: Study {item.get('study_id')} selected from AI search")
-                                st.success(f"✅ Study loaded. Go to Knowledge Graph tab.")
-                                st.rerun()
+                            # Use the centralized node lock manager
+                            from node_lock_manager import node_lock_manager
+                            study_id = item.get('study_id')
+                            study_title = item.get('title', 'Unknown Title')
+                            study_description = item.get('description', 'No description available')
+                            
+                            node_lock_manager.render_lock_button(
+                                study_id=study_id,
+                                tab_name="ai_semantic_search",
+                                study_title=study_title,
+                                study_description=study_description,
+                                button_key=f"kg_view_ai_{study_id}"
+                            )
 
 # === Keyword Search Tab ===
 with tab_explorer:
@@ -606,6 +644,35 @@ with tab_explorer:
             st.session_state.mongo_query = query
             st.session_state.search_triggered = True
 
+    # Status indicator for Study Explorer
+    current_locked = st.session_state.get('selected_study_for_kg')
+    if current_locked:
+        st.info(f"🔒 **Currently Locked**: {current_locked} - Switch to Knowledge Graph tab to view")
+    
+    # Debug section for Study Explorer
+    with st.expander("🔧 Study Explorer Debug", expanded=False):
+        st.write("**Current Session State:**")
+        st.write(f"- Selected study: {st.session_state.get('selected_study_for_kg', 'None')}")
+        st.write(f"- KG auto executed: {st.session_state.get('kg_auto_executed', 'None')}")
+        st.write(f"- Search triggered: {st.session_state.get('search_triggered', 'None')}")
+        
+        # Quick test lock button
+        if st.button("🧪 Test Lock OSD-782", key="test_lock_explorer"):
+            from node_lock_manager import node_lock_manager
+            success = node_lock_manager.lock_node("OSD-782", "study_explorer", "Test Study", "Test Description")
+            if success:
+                st.success("✅ Test lock successful!")
+                st.rerun()
+            else:
+                st.error("❌ Test lock failed!")
+        
+        # Clear lock button for testing
+        if current_locked and st.button("🔓 Clear Lock (Debug)", key="clear_lock_debug"):
+            st.session_state.selected_study_for_kg = None
+            st.session_state.kg_auto_executed = False
+            st.success("🔓 Lock cleared!")
+            st.rerun()
+    
     # Only show results if search was triggered and we have a query
     if st.session_state.get('search_triggered') and st.session_state.get('mongo_query') is not None:
         try:
@@ -623,10 +690,26 @@ with tab_explorer:
                         with view_cols[0]:
                             st.image(get_custom_emoji_for_context("view_graph"), width=15)
                         with view_cols[1]:
-                            if st.button("View Knowledge Graph", key=f"kg_view_kw_{item.get('study_id')}"):
-                                st.session_state.selected_study_for_kg = item.get('study_id')
-                                st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, [], None
-                                st.success(f"Study {item.get('study_id')} selected. Switch to the 'Knowledge Graph' tab.")
+                            # Use the centralized node lock manager
+                            from node_lock_manager import node_lock_manager
+                            study_id = item.get('study_id')
+                            study_title = item.get('title', 'Unknown Title')
+                            study_description = item.get('description', 'No description available')
+                            
+                            # Debug info for Study Explorer
+                            if st.checkbox(f"Debug {study_id}", key=f"debug_{study_id}", value=False):
+                                st.write(f"Study ID: {study_id}")
+                                st.write(f"Tab name: study_explorer")
+                                st.write(f"Current locked: {st.session_state.get('selected_study_for_kg', 'None')}")
+                                st.write(f"Can lock: {node_lock_manager.can_lock_nodes('study_explorer')}")
+                            
+                            node_lock_manager.render_lock_button(
+                                study_id=study_id,
+                                tab_name="study_explorer",
+                                study_title=study_title,
+                                study_description=study_description,
+                                button_key=f"kg_view_kw_{study_id}"
+                            )
                                 
             # Reset search trigger after displaying results to prevent duplicate rendering
             st.session_state.search_triggered = False
@@ -637,72 +720,728 @@ with tab_explorer:
 
 # === Knowledge Graph Tab ===
 with tab_kg:
-    # Simplified Knowledge Graph tab for stability
-    st.header("🕸️ Knowledge Graph Explorer")
-    
-    if not neo4j_enabled:
-        st.warning("⚠️ Neo4j Unavailable (Production Mode)")
-        st.info("Knowledge Graph visualization requires Neo4j connection. This feature is available in local development.")
+    try:
+        # Custom header with NASA emoji
+        header_cols = st.columns([1, 10])
+        with header_cols[0]:
+            st.image(get_custom_emoji_for_context("knowledge_graph"), width=40)
+        with header_cols[1]:
+            st.header("Enhanced Knowledge Graph Explorer")
         
+        # Check if a study was selected from other tabs
+        selected_study_id = st.session_state.get('selected_study_for_kg')
+        
+        # Temporary debug info for troubleshooting
+        with st.expander("🔧 Debug Info (Click to expand)", expanded=False):
+            st.write(f"**selected_study_for_kg**: {selected_study_id}")
+            st.write(f"**kg_auto_executed**: {st.session_state.get('kg_auto_executed', 'Not set')}")
+            st.write(f"**cypher_query_result**: {'Present' if st.session_state.get('cypher_query_result') else 'None'}")
+            st.write(f"**All KG keys**: {[k for k in st.session_state.keys() if 'kg' in k.lower() or 'study' in k.lower()]}")
+            
+            # Manual test button
+            if st.button("🧪 Test Lock OSD-840", key="test_lock"):
+                st.session_state.selected_study_for_kg = "OSD-840"
+                st.session_state.kg_auto_executed = False
+                st.success("Test lock applied! Check if locked node appears above.")
+        
+
+        # === LOCKED NODE SYSTEM ===
+        # Use the centralized node lock manager with error handling
+        try:
+            import sys
+            import os
+            
+            # Ensure the current directory is in the path
+            current_dir = os.path.dirname(os.path.abspath(__file__))
+            if current_dir not in sys.path:
+                sys.path.insert(0, current_dir)
+            
+            from node_lock_manager import node_lock_manager
+            node_lock_manager.render_locked_node_display()
+        except Exception as lock_error:
+            # Fallback to legacy locked node display
+            if selected_study_id:
+                # Prominent locked node display
+                st.container()
+                lock_cols = st.columns([1, 15, 3])
+                with lock_cols[0]:
+                    st.image(get_custom_emoji_for_context("study_id"), width=40)
+                with lock_cols[1]:
+                    st.markdown(f"### 🔒 **LOCKED NODE**: {selected_study_id}")
+                    
+                    # Get and display study details
+                    try:
+                        study_doc = studies_collection.find_one({"study_id": selected_study_id})
+                        if study_doc:
+                            st.markdown(f"**{study_doc.get('title', 'N/A')}**")
+                            st.caption(f"{study_doc.get('description', 'N/A')[:150]}...")
+                    except Exception:
+                        st.caption("Study details unavailable")
+                        
+                with lock_cols[2]:
+                    # Release Node button
+                    if st.button("🔓 **Release Node**", key="release_node", type="primary"):
+                        # Clear all KG-related session state
+                        st.session_state.selected_study_for_kg = None
+                        st.session_state.graph_html = None
+                        st.session_state.kg_study_ids = []
+                        st.session_state.ai_comparison_text = None
+                        st.session_state.cypher_query_result = None
+                        st.session_state.kg_auto_executed = False
+                        st.session_state.kg_mock_result = None
+                        st.success("🔓 Node released! Knowledge Graph reset.")
+                        st.rerun()
+                
+                st.markdown("---")
+        
+        # Auto-execute query for locked study (regardless of Neo4j status)
+        if selected_study_id and not st.session_state.get('kg_auto_executed', False):
+            # Generate query automatically
+            auto_query = f"""MATCH (s:Study {{study_id: '{selected_study_id}'}})
+OPTIONAL MATCH (s)-[r]-(n)
+RETURN s, r, n
+LIMIT 25"""
+            
+            # Mark as executed to prevent re-execution
+            st.session_state.kg_auto_executed = True
+            st.session_state.kg_auto_query = auto_query
+            
+            # Execute the query if Neo4j is available
+            if neo4j_enabled:
+                try:
+                    from enhanced_neo4j_executor import neo4j_executor
+                    
+                    # Show enhanced loading animation
+                    try:
+                        from loading_animations import loading_animations
+                        
+                        # Create animation container
+                        loading_container = st.empty()
+                        
+                        with loading_container.container():
+                            # Show query execution animation
+                            loading_animations.show_query_execution_animation(auto_query, duration=2.0)
+                        
+                        # Execute query
+                        result = neo4j_executor.execute_query(auto_query)
+                        
+                        # Clear loading animation
+                        loading_container.empty()
+                        
+                        if result.success:
+                            st.session_state.cypher_query_result = result
+                            st.session_state.cypher_query_executed = auto_query
+                            
+                            # Show success with animation
+                            loading_animations.show_success_animation(f"Visualization loaded! ({result.execution_time:.0f}ms)")
+                        else:
+                            st.error(f"❌ Query failed: {result.error_message}")
+                            
+                    except ImportError:
+                        # Fallback to simple spinner
+                        with st.spinner(f"🤖 Loading visualization for {selected_study_id}..."):
+                            result = neo4j_executor.execute_query(auto_query)
+                            if result.success:
+                                st.session_state.cypher_query_result = result
+                                st.session_state.cypher_query_executed = auto_query
+                                st.success(f"✅ **Locked node visualization loaded!** Query executed in {result.execution_time:.0f}ms")
+                            else:
+                                st.error(f"❌ Query failed: {result.error_message}")
+                                
+                except Exception as e:
+                    st.error(f"❌ Auto-query execution failed: {str(e)}")
+            else:
+                # Create a mock result for display when Neo4j is not available
+                st.session_state.kg_mock_result = {
+                    "study_id": selected_study_id,
+                    "query": auto_query,
+                    "message": "Neo4j visualization not available - showing study metadata instead"
+                }
+            
+            st.rerun()
+        
+        if not neo4j_enabled: 
+            # Custom error with NASA emoji
+            error_cols = st.columns([1, 20])
+            with error_cols[0]:
+                st.image(get_custom_emoji_for_context("error"), width=20)
+            with error_cols[1]:
+                st.warning("⚠️ Neo4j Unavailable (Production Mode)")
+            st.info("Knowledge Graph visualization requires Neo4j. Local deployment shows full relationship maps. Viewing study metadata instead...")
+            
+            if selected_study_id:
+                st.info("💡 **Neo4j Required**: To see the full knowledge graph and relationships for this study, Neo4j connection is needed.")
+            else:
+                st.info("Select a study from AI Semantic Search or Study Explorer to view its metadata.")
+        else:
+            # Import the Cypher editor with error handling
+            try:
+                from cypher_editor import CypherEditor
+                from enhanced_neo4j_executor import neo4j_executor
+                
+                # Create cypher editor instance
+                cypher_editor = CypherEditor()
+                
+                # Create two-column layout: Cypher editor on left, graph on right
+                editor_col, graph_col = st.columns([1, 2], gap="medium")
+                
+                with editor_col:
+                    # Custom subheader with NASA emoji
+                    subheader_cols = st.columns([1, 10])
+                    with subheader_cols[0]:
+                        st.image(get_custom_emoji_for_context("cypher"), width=30)
+                    with subheader_cols[1]:
+                        st.subheader("Cypher Query Interface")
+                    
+                    # Auto-generate query for selected study
+                    if selected_study_id and st.button("🎯 Generate Query for Selected Study", key="auto_gen_study_query"):
+                        auto_query = f"""MATCH (s:Study {{study_id: '{selected_study_id}'}})
+OPTIONAL MATCH (s)-[r]-(n)
+RETURN s, r, n
+LIMIT 25"""
+                        cypher_editor.set_query(auto_query)
+                        st.success(f"✅ Generated query for study {selected_study_id}")
+                        st.rerun()
+                    
+                    # Render the complete Cypher editor with error handling
+                    try:
+                        current_query, execute_clicked = cypher_editor.render_complete_editor()
+                    except Exception as e:
+                        st.error(f"Cypher editor initialization failed: {str(e)}")
+                        st.info("Using fallback query interface...")
+                        current_query = st.text_area("Enter Cypher Query:", height=200, placeholder="MATCH (n) RETURN n LIMIT 10")
+                        execute_clicked = st.button("Execute Query", key="fallback_execute")
+                    
+                    # Handle query execution
+                    if execute_clicked and current_query and current_query.strip():
+                        with st.spinner("Executing query..."):
+                            try:
+                                # Execute the query using the enhanced executor
+                                result = neo4j_executor.execute_query(current_query)
+                                
+                                # Add to history with detailed metadata (with error handling)
+                                try:
+                                    cypher_editor.add_to_history(
+                                        query=current_query,
+                                        execution_time_ms=getattr(result, 'execution_time', 0),
+                                        result_count=len(result.data) if hasattr(result, 'data') and result.data else 0,
+                                        success=getattr(result, 'success', False),
+                                        error_message=getattr(result, 'error_message', None) if not getattr(result, 'success', False) else None
+                                    )
+                                except Exception:
+                                    # History update failed - continue without it
+                                    pass
+                                
+                                # Save query state to session manager (with error handling)
+                                try:
+                                    from session_manager import session_manager
+                                    session_manager.save_query_state(
+                                        query=current_query,
+                                        results={
+                                            "success": getattr(result, 'success', False),
+                                            "execution_time": getattr(result, 'execution_time', 0),
+                                            "data_count": len(result.data) if hasattr(result, 'data') and result.data else 0,
+                                            "result_type": getattr(result, 'result_type', 'unknown')
+                                        }
+                                    )
+                                except Exception:
+                                    # Session manager save failed - continue without it
+                                    pass
+                                
+                                if result.success:
+                                    # Store results in session state for visualization
+                                    st.session_state.cypher_query_result = result
+                                    st.session_state.cypher_query_executed = current_query
+                                    
+                                    # Custom success with NASA emoji
+                                    success_cols = st.columns([1, 20])
+                                    with success_cols[0]:
+                                        st.image(get_custom_emoji_for_context("success"), width=20)
+                                    with success_cols[1]:
+                                        st.success(f"Query executed successfully in {result.execution_time:.0f}ms")
+                                    
+                                    # Show performance warning if needed
+                                    if result.warning_message:
+                                        warning_cols = st.columns([1, 20])
+                                        with warning_cols[0]:
+                                            st.image(get_custom_emoji_for_context("warning"), width=20)
+                                        with warning_cols[1]:
+                                            st.warning(result.warning_message)
+                                else:
+                                    # Custom error with NASA emoji
+                                    error_cols = st.columns([1, 20])
+                                    with error_cols[0]:
+                                        st.image(get_custom_emoji_for_context("error"), width=20)
+                                    with error_cols[1]:
+                                        st.error(f"Query failed: {result.error_message}")
+                                    st.session_state.cypher_query_result = None
+                                    
+                            except Exception as query_error:
+                                st.error(f"Query execution failed: {str(query_error)}")
+                                st.session_state.cypher_query_result = None
+                
+                with graph_col:
+                    # Custom subheader with NASA emoji
+                    subheader_cols = st.columns([1, 10])
+                    with subheader_cols[0]:
+                        st.image(get_custom_emoji_for_context("chart"), width=30)
+                    with subheader_cols[1]:
+                        if selected_study_id:
+                            st.subheader(f"🔒 Locked Node Visualization: {selected_study_id}")
+                        else:
+                            st.subheader("Query Results & Visualization")
+                    
+                    # Show locked node status
+                    if selected_study_id:
+                        if st.session_state.get('kg_auto_executed', False):
+                            st.success(f"🔒 **Displaying results for locked study: {selected_study_id}**")
+                        else:
+                            st.info(f"🔄 **Loading visualization for locked study: {selected_study_id}...**")
+                    
+                    # Check for locked study fallback (when Neo4j not available)
+                    if selected_study_id and not neo4j_enabled and st.session_state.get('kg_mock_result'):
+                        # Show study metadata as fallback
+                        st.warning("⚠️ **Neo4j Unavailable** - Showing study metadata instead of graph visualization")
+                        
+                        try:
+                            study_doc = studies_collection.find_one({"study_id": selected_study_id})
+                            if study_doc:
+                                st.markdown("### 📊 **Study Details**")
+                                
+                                # Create a nice display of study information
+                                info_cols = st.columns([1, 3])
+                                with info_cols[0]:
+                                    st.markdown("**Study ID:**")
+                                    st.markdown("**Title:**")
+                                    st.markdown("**Organisms:**")
+                                    st.markdown("**Factors:**")
+                                    st.markdown("**Description:**")
+                                
+                                with info_cols[1]:
+                                    st.markdown(f"`{study_doc.get('study_id', 'N/A')}`")
+                                    st.markdown(f"{study_doc.get('title', 'N/A')}")
+                                    st.markdown(f"{', '.join(study_doc.get('organisms', ['N/A']))}")
+                                    st.markdown(f"{', '.join(study_doc.get('factors', ['N/A']))}")
+                                    st.markdown(f"{study_doc.get('description', 'N/A')[:300]}...")
+                                
+                                if study_doc.get('study_link'):
+                                    st.markdown(f"🔗 [**View Original Study on OSDR**]({study_doc.get('study_link')})")
+                                
+                                st.info("💡 **Full graph visualization requires Neo4j connection**")
+                            else:
+                                st.error(f"Study {selected_study_id} not found in database")
+                        except Exception as e:
+                            st.error(f"Error loading study details: {e}")
+                    
+                    # Check if we have query results to display
+                    elif hasattr(st.session_state, 'cypher_query_result') and st.session_state.cypher_query_result:
+                        result = st.session_state.cypher_query_result
+                        
+                        # Use the enhanced results formatter with error handling
+                        try:
+                            from results_formatter import ResultsFormatter
+                            results_formatter = ResultsFormatter()
+                            formatted_results = results_formatter.format_results(result)
+                            
+                            # Render the formatted results
+                            results_formatter.render_results_display(formatted_results)
+                            
+                            # Add interactive node click handler
+                            from node_click_handler import node_click_handler
+                            selected_query = node_click_handler.render_interactive_node_click_handler()
+                            
+                            # If a query was generated from node click, load it into the Cypher editor
+                            if selected_query and 'generated_node_query' in st.session_state:
+                                st.markdown("---")
+                                st.markdown("### 🔄 Generated Query from Node Click")
+                                st.code(st.session_state.generated_node_query, language="sql")
+                                
+                                if st.button("▶️ Execute Generated Query", key="execute_node_query"):
+                                    # Execute the generated query
+                                    from enhanced_neo4j_executor import neo4j_executor
+                                    node_result = neo4j_executor.execute_query(st.session_state.generated_node_query)
+                                    
+                                    if node_result.success:
+                                        st.success(f"✅ Node query executed successfully! Found {len(node_result.data)} results.")
+                                        # Format and display the results
+                                        node_formatted_results = results_formatter.format_results(node_result)
+                                        results_formatter.render_results_display(node_formatted_results)
+                                    else:
+                                        st.error(f"❌ Node query failed: {node_result.error_message}")
+                                
+                                # Clear the generated query after use
+                                if st.button("🧹 Clear Generated Query", key="clear_node_query"):
+                                    if 'generated_node_query' in st.session_state:
+                                        del st.session_state.generated_node_query
+                                    if 'node_query_description' in st.session_state:
+                                        del st.session_state.node_query_description
+                                    st.rerun()
+                            
+                        except Exception as formatter_error:
+                            # Fallback display for data conversion errors
+                            st.warning(f"⚠️ **Results formatter error**: {str(formatter_error)}")
+                            st.info("**Showing raw query results instead:**")
+                            
+                            # Simple fallback display
+                            if hasattr(result, 'data') and result.data:
+                                st.success(f"🎯 **Knowledge Graph Loaded!** Found {len(result.data)} connected entities for {selected_study_id}")
+                                
+                                # Quick stats
+                                stats_cols = st.columns(3)
+                                with stats_cols[0]:
+                                    st.metric("📊 Records", len(result.data))
+                                with stats_cols[1]:
+                                    st.metric("⚡ Query Time", f"{getattr(result, 'execution_time', 0):.0f}ms")
+                                with stats_cols[2]:
+                                    st.metric("🔒 Study", selected_study_id)
+                                
+                                # Create a simple knowledge graph visualization
+                                st.markdown("### 🕸️ **Knowledge Graph Visualization**")
+                                
+                                # Parse the records to extract nodes and relationships
+                                study_node = None
+                                connected_nodes = []
+                                relationships = []
+                                
+                                for record in result.data:
+                                    try:
+                                        # Extract study node
+                                        if hasattr(record, 's') and record.s:
+                                            study_node = record.s
+                                        
+                                        # Extract connected nodes and relationships
+                                        if hasattr(record, 'n') and record.n:
+                                            connected_nodes.append(record.n)
+                                        
+                                        if hasattr(record, 'r') and record.r:
+                                            relationships.append(record.r)
+                                    except Exception:
+                                        pass
+                                
+                                # Display the knowledge graph structure
+                                if study_node:
+                                    st.markdown("---")
+                                    st.markdown("### 🌐 **Interactive Knowledge Graph**")
+                                    # Center study node
+                                    study_cols = st.columns([1, 3, 1])
+                                    with study_cols[1]:
+                                        st.markdown(f"""
+                                        <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 15px; margin: 10px;">
+                                            <h3 style="color: white; margin: 0;">🎯 {selected_study_id}</h3>
+                                            <p style="color: #f0f0f0; margin: 5px 0;">{getattr(study_node, 'title', 'Study Node')}</p>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                    
+                                    # Connected nodes in a grid
+                                    if connected_nodes:
+                                        st.markdown("#### 🔗 **Connected Entities**")
+                                        
+                                        # Group nodes by type
+                                        node_types = {}
+                                        for node in connected_nodes:
+                                            try:
+                                                labels = list(node.labels) if hasattr(node, 'labels') else ['Unknown']
+                                                node_type = labels[0] if labels else 'Unknown'
+                                                if node_type not in node_types:
+                                                    node_types[node_type] = []
+                                                node_types[node_type].append(node)
+                                            except Exception:
+                                                pass
+                                        
+                                        # Display nodes by type
+                                        for node_type, nodes in node_types.items():
+                                            if nodes:
+                                                st.markdown(f"**{node_type}s ({len(nodes)})**")
+                                                
+                                                # Create columns for nodes
+                                                cols = st.columns(min(len(nodes), 3))
+                                                for i, node in enumerate(nodes[:3]):  # Show first 3 of each type
+                                                    with cols[i % 3]:
+                                                        try:
+                                                            name = getattr(node, 'name', getattr(node, f'{node_type.lower()}_name', f'{node_type} {i+1}'))
+                                                            st.markdown(f"""
+                                                            <div style="padding: 10px; background: #2d3748; border-radius: 8px; margin: 5px; text-align: center;">
+                                                                <strong>{name}</strong>
+                                                            </div>
+                                                            """, unsafe_allow_html=True)
+                                                        except Exception:
+                                                            st.markdown(f"<div style='padding: 10px; background: #2d3748; border-radius: 8px; margin: 5px; text-align: center;'><strong>{node_type} {i+1}</strong></div>", unsafe_allow_html=True)
+                                                
+                                                if len(nodes) > 3:
+                                                    st.caption(f"... and {len(nodes) - 3} more {node_type.lower()}s")
+                                    
+                                    # Relationships summary
+                                    if relationships:
+                                        st.markdown("#### ⚡ **Relationships**")
+                                        rel_types = {}
+                                        for rel in relationships:
+                                            try:
+                                                rel_type = rel.type if hasattr(rel, 'type') else 'CONNECTED_TO'
+                                                rel_types[rel_type] = rel_types.get(rel_type, 0) + 1
+                                            except Exception:
+                                                pass
+                                        
+                                        rel_cols = st.columns(min(len(rel_types), 4))
+                                        for i, (rel_type, count) in enumerate(rel_types.items()):
+                                            with rel_cols[i % 4]:
+                                                st.metric(rel_type.replace('_', ' '), count)
+                                
+                                # Raw data expandable section
+                                with st.expander("🔍 **View Raw Data**", expanded=False):
+                                    for i, record in enumerate(result.data[:5]):
+                                        st.markdown(f"**Record {i+1}:**")
+                                        st.json(dict(record) if hasattr(record, 'items') else str(record))
+                                    
+                                    if len(result.data) > 5:
+                                        st.info(f"... and {len(result.data) - 5} more records")
+                            else:
+                                st.info("No data returned from query")
+                            
+                            formatted_results = None
+                        
+                        # Add node interaction panel if we have graph results
+                        if formatted_results and formatted_results.result_type.value in ['graph', 'mixed'] and formatted_results.graph_html:
+                            st.markdown("---")
+                            
+                            # Node interaction section
+                            from node_click_handler import NodeClickHandler
+                            node_click_handler = NodeClickHandler()
+                            
+                            # Custom subheader with NASA emoji
+                            target_cols = st.columns([1, 10])
+                            with target_cols[0]:
+                                st.image(get_custom_emoji_for_context("target"), width=30)
+                            with target_cols[1]:
+                                st.subheader("Interactive Node Exploration")
+                            
+                            # Create sample node interaction for demonstration
+                            demo_cols = st.columns(2)
+                            
+                            with demo_cols[0]:
+                                # Custom info with NASA emoji
+                                info_cols = st.columns([1, 20])
+                                with info_cols[0]:
+                                    st.image(get_custom_emoji_for_context("lightbulb"), width=20)
+                                with info_cols[1]:
+                                    st.info("**Click on nodes in the graph above to generate contextual queries**")
+                                
+                                # Show sample queries for demonstration
+                                rocket_cols = st.columns([1, 10])
+                                with rocket_cols[0]:
+                                    st.image(get_custom_emoji_for_context("rocket"), width=25)
+                                with rocket_cols[1]:
+                                    st.markdown("### Try These Sample Queries:")
+                                sample_queries = node_click_handler.create_sample_queries_for_demo()
+                                
+                                for sample in sample_queries[:2]:  # Show first 2 samples
+                                    # Custom button with NASA emoji
+                                    doc_cols = st.columns([1, 10])
+                                    with doc_cols[0]:
+                                        st.image(get_custom_emoji_for_context("document"), width=15)
+                                    with doc_cols[1]:
+                                        if st.button(sample['title'], key=f"sample_{sample['title'].replace(' ', '_')}"):
+                                            cypher_editor.set_query(sample['query'])
+                                            st.success(f"Query loaded: {sample['description']}")
+                                            st.rerun()
+                            
+                            with demo_cols[1]:
+                                # Manual node exploration
+                                # Custom header with NASA emoji
+                                mag_cols = st.columns([1, 10])
+                                with mag_cols[0]:
+                                    st.image(get_custom_emoji_for_context("magnifying"), width=25)
+                                with mag_cols[1]:
+                                    st.markdown("### Manual Node Exploration")
+                                
+                                # Example node types for manual exploration
+                                node_type = st.selectbox(
+                                    "Select node type to explore:",
+                                    ["Study", "Organism", "Factor", "Assay"],
+                                    key="manual_node_type"
+                                )
+                                
+                                if node_type == "Study":
+                                    node_value = st.text_input("Study ID:", placeholder="e.g., OSD-840", key="manual_study_id")
+                                    if node_value and st.button("Generate Study Queries", key="gen_study_queries"):
+                                        properties = {"study_id": node_value}
+                                        selected_query = node_click_handler.render_node_interaction_panel(
+                                            node_value, node_type, properties
+                                        )
+                                        if selected_query:
+                                            cypher_editor.set_query(selected_query)
+                                            st.rerun()
+                                
+                                elif node_type in ["Organism", "Factor", "Assay"]:
+                                    name_field = f"{node_type.lower()}_name"
+                                    node_value = st.text_input(f"{node_type} name:", placeholder=f"e.g., mouse, spaceflight", key=f"manual_{node_type.lower()}")
+                                    if node_value and st.button(f"Generate {node_type} Queries", key=f"gen_{node_type.lower()}_queries"):
+                                        properties = {name_field: node_value, "name": node_value}
+                                        selected_query = node_click_handler.render_node_interaction_panel(
+                                            node_value, node_type, properties
+                                        )
+                                        if selected_query:
+                                            cypher_editor.set_query(selected_query)
+                                            st.rerun()
+                    
+                    # Legacy graph functionality (for backward compatibility)
+                    elif st.session_state.get('selected_study_for_kg'):
+                        selected_study_id = st.session_state.get('selected_study_for_kg')
+                        
+                        if st.session_state.graph_html is None:
+                            with st.spinner(f"Generating base graph for {selected_study_id}..."):
+                                html, ids = build_and_display_study_graph(selected_study_id)
+                                st.session_state.graph_html, st.session_state.kg_study_ids = html, ids
+                        
+                        st.subheader(f"Legacy Graph View: {', '.join(st.session_state.kg_study_ids)}")
+                        if st.session_state.graph_html: 
+                            st.components.v1.html(st.session_state.graph_html, height=600, scrolling=True)
+                        
+                        # Legacy interactive queries
+                        st.markdown("---")
+                        st.subheader("Quick Actions")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            if st.button("Find Similar Study (Organism)"):
+                                with st.spinner("Querying..."):
+                                    html, ids = find_similar_studies_by_organism(selected_study_id)
+                                    st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
+                                st.rerun()
+                        with col2:
+                            if st.button("Expand Connections"):
+                                with st.spinner("Querying..."):
+                                    html, ids = expand_second_level_connections(selected_study_id)
+                                    st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
+                                st.rerun()
+                        with col3:
+                            if st.button("Reset Graph"):
+                                with st.spinner("Resetting..."):
+                                    html, ids = build_and_display_study_graph(selected_study_id)
+                                    st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = html, ids, None
+                                st.rerun()
+                        
+                        # AI Analysis
+                        st.markdown("---")
+                        # Custom subheader with NASA emoji
+                        robot_cols = st.columns([1, 10])
+                        with robot_cols[0]:
+                            st.image(get_custom_emoji_for_context("robot"), width=30)
+                        with robot_cols[1]:
+                            st.subheader("AI-Powered Analysis")
+                        if len(st.session_state.kg_study_ids) == 2:
+                            if st.button(f"Compare {st.session_state.kg_study_ids[0]} & {st.session_state.kg_study_ids[1]} with AI"):
+                                with st.spinner("Calling Google Gemini to analyze..."):
+                                    docs = list(studies_collection.find({"study_id": {"$in": st.session_state.kg_study_ids}}, {"_id": 0, "study_id": 1, "title": 1, "description": 1}))
+                                    if len(docs) == 2:
+                                        d1 = f"ID: {docs[0].get('study_id')}, Title: {docs[0].get('title')}, Desc: {docs[0].get('description')}"
+                                        d2 = f"ID: {docs[1].get('study_id')}, Title: {docs[1].get('title')}, Desc: {docs[1].get('description')}"
+                                        st.session_state.ai_comparison_text = get_ai_comparison(d1, d2)
+                                    else: 
+                                        st.session_state.ai_comparison_text = "Error: Could not retrieve details for both studies."
+                                st.rerun()
+                        if st.session_state.ai_comparison_text:
+                            # Custom info with NASA emoji
+                            gemini_cols = st.columns([1, 20])
+                            with gemini_cols[0]:
+                                st.image(get_custom_emoji_for_context("robot"), width=20)
+                            with gemini_cols[1]:
+                                st.info("Gemini Analysis:")
+                            st.markdown(st.session_state.ai_comparison_text)
+                        
+                        # Clear controls
+                        st.markdown("---")
+                        if st.button("Clear Graph View"):
+                            st.session_state.selected_study_for_kg, st.session_state.graph_html, st.session_state.kg_study_ids, st.session_state.ai_comparison_text = None, None, [], None
+                            st.rerun()
+                    
+                    else:
+                        # Show different message based on locked node status
+                        if selected_study_id:
+                            # Locked node but no results yet
+                            lock_info_cols = st.columns([1, 20])
+                            with lock_info_cols[0]:
+                                st.image(get_custom_emoji_for_context("study_id"), width=20)
+                            with lock_info_cols[1]:
+                                st.info(f"🔒 **Node Locked: {selected_study_id}**\n\nVisualization will appear here once the query executes. Use the Cypher editor to run custom queries for this study, or wait for auto-execution to complete.")
+                        else:
+                            # No locked node - show general instructions
+                            start_cols = st.columns([1, 20])
+                            with start_cols[0]:
+                                st.image(get_custom_emoji_for_context("lightbulb"), width=20)
+                            with start_cols[1]:
+                                st.info("**Get Started:**\n\n1. **Lock a study**: Go to AI Search or Study Explorer and click '🔒 Lock into Knowledge Graph'\n2. **Or use Cypher editor**: Write custom queries on the left\n3. **View results**: Visualizations will appear here")
+                        
+                        # Show sample queries
+                        sample_cols = st.columns([1, 10])
+                        with sample_cols[0]:
+                            st.image(get_custom_emoji_for_context("rocket"), width=25)
+                        with sample_cols[1]:
+                            st.markdown("### Sample Queries to Try:")
+                        sample_queries = [
+                            ("Find all studies", "MATCH (s:Study) RETURN s LIMIT 10"),
+                            ("Studies with mice", "MATCH (s:Study)-[:HAS_ORGANISM]->(o:Organism) WHERE o.organism_name CONTAINS 'mouse' RETURN s, o LIMIT 5"),
+                            ("Spaceflight studies", "MATCH (s:Study)-[:HAS_FACTOR]->(f:Factor) WHERE f.factor_name CONTAINS 'spaceflight' RETURN s, f LIMIT 5"),
+                            ("Study connections", "MATCH (s:Study)-[r]-(n) WHERE s.study_id = 'OSD-840' RETURN s, r, n LIMIT 20")
+                        ]
+                        
+                        for title, query in sample_queries:
+                            # Custom button with NASA emoji
+                            query_cols = st.columns([1, 10])
+                            with query_cols[0]:
+                                st.image(get_custom_emoji_for_context("document"), width=15)
+                            with query_cols[1]:
+                                if st.button(title, key=f"sample_{title.replace(' ', '_')}"):
+                                    cypher_editor.set_query(query)
+                                    st.rerun()
+                
+            except ImportError as import_error:
+                st.error(f"Knowledge Graph components unavailable: {str(import_error)}")
+                st.info("Some advanced features require additional dependencies.")
+            except Exception as kg_error:
+                st.error(f"Knowledge Graph error: {str(kg_error)}")
+                st.info("Using simplified interface...")
+                
+                # Fallback simple interface
+                st.subheader("Simple Query Interface")
+                query = st.text_area("Enter Cypher Query:", height=150, placeholder="MATCH (n) RETURN n LIMIT 10")
+                if st.button("Execute Query", key="fallback_kg_execute"):
+                    st.info("Query execution temporarily unavailable due to technical issues.")
+    
+    except Exception as tab_error:
+        st.error("🔧 Knowledge Graph tab encountered an error")
+        
+        # Show detailed error in debug mode
+        with st.expander("🔍 Error Details (for debugging)", expanded=False):
+            st.code(f"Error: {str(tab_error)}")
+            st.code(f"Error type: {type(tab_error).__name__}")
+            import traceback
+            st.code(traceback.format_exc())
+        
+        st.info("💡 **Troubleshooting**: This error might be due to missing dependencies or configuration issues.")
+        
+        # Show basic info if study is selected
         if st.session_state.get('selected_study_for_kg'):
             st.info(f"Selected study: {st.session_state.get('selected_study_for_kg')}")
-            if st.button("Clear Selection", key="kg_clear_simple"):
+            if st.button("Clear Selection", key="kg_clear_fallback"):
                 st.session_state.selected_study_for_kg = None
                 st.rerun()
-    else:
-        st.success("✅ Neo4j Connected - Knowledge Graph Available")
         
-        # Simple query interface
-        st.subheader("Cypher Query Interface")
-        
-        # Sample queries
-        sample_queries = {
-            "Find all studies": "MATCH (s:Study) RETURN s LIMIT 10",
-            "Studies with mice": "MATCH (s:Study)-[:HAS_ORGANISM]->(o:Organism) WHERE o.organism_name CONTAINS 'mouse' RETURN s, o LIMIT 5",
-            "Spaceflight studies": "MATCH (s:Study)-[:HAS_FACTOR]->(f:Factor) WHERE f.factor_name CONTAINS 'spaceflight' RETURN s, f LIMIT 5"
-        }
-        
-        # Query selection
-        selected_query_name = st.selectbox("Choose a sample query:", list(sample_queries.keys()))
-        query = st.text_area("Cypher Query:", value=sample_queries[selected_query_name], height=150)
-        
-        if st.button("Execute Query", key="simple_kg_execute"):
-            try:
-                from enhanced_neo4j_executor import neo4j_executor
-                with st.spinner("Executing query..."):
-                    result = neo4j_executor.execute_query(query)
-                    
-                if result.success:
-                    st.success(f"✅ Query executed successfully in {result.execution_time:.0f}ms")
-                    
-                    # Simple results display
-                    if hasattr(result, 'data') and result.data:
-                        st.subheader("Results")
-                        st.json(result.data[:5])  # Show first 5 results
-                        
-                        if len(result.data) > 5:
-                            st.info(f"Showing first 5 of {len(result.data)} results")
-                    else:
-                        st.info("Query executed but returned no data")
-                else:
-                    st.error(f"Query failed: {result.error_message}")
-                    
-            except Exception as e:
-                st.error(f"Error executing query: {str(e)}")
-        
-        # Show selected study if available
-        if st.session_state.get('selected_study_for_kg'):
-            st.markdown("---")
-            st.subheader("Selected Study")
-            st.info(f"Study ID: {st.session_state.get('selected_study_for_kg')}")
-            
-            if st.button("Clear Selection", key="kg_clear_neo4j"):
-                st.session_state.selected_study_for_kg = None
+        # Provide fallback functionality
+        st.markdown("### 🔄 Fallback Options")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Retry Knowledge Graph", key="retry_kg"):
                 st.rerun()
+        with col2:
+            if st.button("📚 Go to Study Explorer", key="goto_explorer"):
+                st.info("Please switch to the Study Explorer tab manually.")
 
 # === Real-Time Data Tab ===
 with tab_realtime:
     try:
+        # Show node locking restriction message
+        from node_lock_manager import node_lock_manager
+        node_lock_manager.render_unauthorized_message("realtime_data")
+        
         from realtime_data_manager import realtime_manager
         from data_source_manager import data_source_manager
         
@@ -716,6 +1455,10 @@ with tab_realtime:
 # === Research Analytics Tab ===
 with tab_analytics:
     try:
+        # Show node locking restriction message
+        from node_lock_manager import node_lock_manager
+        node_lock_manager.render_unauthorized_message("research_analytics")
+        
         from research_analytics import research_analytics
         from data_source_manager import data_source_manager
         

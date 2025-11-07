@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from enum import Enum
 import json
 import re
+import logging
 from enhanced_neo4j_executor import ResultType, QueryResult
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 @dataclass
 class FormattedResults:
@@ -133,14 +137,26 @@ class ResultsFormatter:
         try:
             # Extract scalar values
             scalar_values = {}
-            for i, record in enumerate(query_result.data):
-                for key, value in record.items():
-                    if isinstance(value, (str, int, float, bool, type(None))):
-                        scalar_key = f"{key}_{i}" if len(query_result.data) > 1 else key
-                        scalar_values[scalar_key] = value
+            processed_data = []
             
-            # Create table view
-            table_data = pd.DataFrame(query_result.data)
+            for i, record in enumerate(query_result.data):
+                processed_record = {}
+                for key, value in record.items():
+                    try:
+                        if isinstance(value, (str, int, float, bool, type(None))):
+                            scalar_key = f"{key}_{i}" if len(query_result.data) > 1 else key
+                            scalar_values[scalar_key] = value
+                            processed_record[key] = str(value) if value is not None else 'None'
+                        else:
+                            # Handle Neo4j objects or other complex types
+                            processed_record[key] = str(value) if value is not None else 'None'
+                    except Exception as e:
+                        processed_record[f"{key}_error"] = f"Error processing: {str(e)}"
+                
+                processed_data.append(processed_record)
+            
+            # Create table view with processed data
+            table_data = pd.DataFrame(processed_data)
             
             return FormattedResults(
                 result_type=ResultType.SCALAR,
@@ -160,7 +176,38 @@ class ResultsFormatter:
     def _format_table_results(self, query_result: QueryResult) -> FormattedResults:
         """Format results for tabular display"""
         try:
-            table_data = pd.DataFrame(query_result.data)
+            # Convert Neo4j objects to serializable format before creating DataFrame
+            processed_data = []
+            for record in query_result.data:
+                processed_record = {}
+                for key, value in record.items():
+                    try:
+                        if hasattr(value, 'labels'):  # Neo4j Node
+                            labels = list(value.labels)
+                            properties = dict(value)
+                            processed_record[f"{key}_type"] = str(labels[0] if labels else "Unknown")
+                            # Use element_id if available, fallback to id
+                            node_id = getattr(value, 'element_id', getattr(value, 'id', 'unknown'))
+                            processed_record[f"{key}_id"] = str(node_id)
+                            processed_record[f"{key}_properties"] = json.dumps(properties, default=str)
+                        elif hasattr(value, 'type'):  # Neo4j Relationship
+                            processed_record[f"{key}_relationship"] = str(value.type)
+                            # Use element_id if available, fallback to id
+                            start_id = getattr(value.start_node, 'element_id', getattr(value.start_node, 'id', 'unknown'))
+                            end_id = getattr(value.end_node, 'element_id', getattr(value.end_node, 'id', 'unknown'))
+                            processed_record[f"{key}_start_id"] = str(start_id)
+                            processed_record[f"{key}_end_id"] = str(end_id)
+                            processed_record[f"{key}_properties"] = json.dumps(dict(value), default=str)
+                        else:
+                            # Convert all values to strings to avoid struct/non-struct mixing
+                            processed_record[key] = str(value) if value is not None else 'None'
+                    except Exception as e:
+                        # Fallback for any problematic values
+                        processed_record[f"{key}_error"] = f"Error processing: {str(e)}"
+                
+                processed_data.append(processed_record)
+            
+            table_data = pd.DataFrame(processed_data)
             
             return FormattedResults(
                 result_type=ResultType.TABLE,
@@ -255,22 +302,28 @@ class ResultsFormatter:
                 break
                 
             for key, value in record.items():
-                # Handle Neo4j Node objects
-                if hasattr(value, 'labels') and hasattr(value, 'id'):
-                    if self._add_node_to_graph(net, value, added_nodes):
-                        node_count += 1
-                        if node_count >= self.max_graph_nodes:
-                            break
-                
-                # Handle Neo4j Relationship objects
-                elif hasattr(value, 'type') and hasattr(value, 'start_node') and hasattr(value, 'end_node'):
-                    self._add_relationship_to_graph(net, value, added_edges, added_nodes)
+                try:
+                    # Handle Neo4j Node objects
+                    if hasattr(value, 'labels') and hasattr(value, 'id'):
+                        if self._add_node_to_graph(net, value, added_nodes):
+                            node_count += 1
+                            if node_count >= self.max_graph_nodes:
+                                break
                     
-                    # Ensure both nodes are added
-                    for node in [value.start_node, value.end_node]:
-                        if node.id not in added_nodes and node_count < self.max_graph_nodes:
-                            if self._add_node_to_graph(net, node, added_nodes):
-                                node_count += 1
+                    # Handle Neo4j Relationship objects
+                    elif hasattr(value, 'type') and hasattr(value, 'start_node') and hasattr(value, 'end_node'):
+                        self._add_relationship_to_graph(net, value, added_edges, added_nodes)
+                        
+                        # Ensure both nodes are added
+                        for node in [value.start_node, value.end_node]:
+                            node_id = getattr(node, 'element_id', getattr(node, 'id', None))
+                            if node_id not in added_nodes and node_count < self.max_graph_nodes:
+                                if self._add_node_to_graph(net, node, added_nodes):
+                                    node_count += 1
+                except Exception as e:
+                    # Log the error but continue processing other records
+                    logger.warning(f"Error processing graph element {key}: {str(e)}")
+                    continue
         
         # Add warning if we hit the node limit
         if node_count >= self.max_graph_nodes:
@@ -287,13 +340,65 @@ class ResultsFormatter:
         # Only return HTML if we have nodes to display
         if added_nodes:
             graph_html = net.generate_html()
+            
+            # Add custom JavaScript for node click handling
+            click_handler_js = """
+            <script>
+            // Add click event listener for nodes
+            network.on("click", function (params) {
+                if (params.nodes.length > 0) {
+                    var nodeId = params.nodes[0];
+                    var nodeData = nodes.get(nodeId);
+                    
+                    if (nodeData && nodeData['data-click']) {
+                        try {
+                            var clickData = JSON.parse(nodeData['data-click']);
+                            
+                            // Store click data in Streamlit session state via a hidden form
+                            var form = document.createElement('form');
+                            form.method = 'POST';
+                            form.style.display = 'none';
+                            
+                            var input = document.createElement('input');
+                            input.type = 'hidden';
+                            input.name = 'node_click_data';
+                            input.value = JSON.stringify(clickData);
+                            form.appendChild(input);
+                            
+                            document.body.appendChild(form);
+                            
+                            // Trigger Streamlit rerun with node data
+                            window.parent.postMessage({
+                                type: 'streamlit:setComponentValue',
+                                value: clickData
+                            }, '*');
+                            
+                            // Show user feedback
+                            alert('Node clicked: ' + clickData.node_type + ' - ' + (clickData.properties.name || clickData.properties.study_id || 'Unknown'));
+                            
+                        } catch (e) {
+                            console.error('Error handling node click:', e);
+                        }
+                    }
+                }
+            });
+            </script>
+            """
+            
+            # Insert the JavaScript before the closing body tag
+            if "</body>" in graph_html:
+                graph_html = graph_html.replace("</body>", click_handler_js + "</body>")
+            else:
+                graph_html += click_handler_js
+            
             return warning_html + graph_html
         else:
             return None
     
     def _add_node_to_graph(self, net: Network, node, added_nodes: set) -> bool:
         """Add a node to the Pyvis graph with enhanced properties"""
-        node_id = node.id
+        # Use element_id if available (newer Neo4j versions), fallback to id
+        node_id = getattr(node, 'element_id', getattr(node, 'id', None))
         
         if node_id in added_nodes:
             return False
@@ -312,10 +417,13 @@ class ResultsFormatter:
             "properties": properties
         }
         
+        # Create enhanced title with click instruction
+        enhanced_title = title + "\n\n🖱️ Click to generate related queries"
+        
         net.add_node(
             node_id,
             label=label,
-            title=title,
+            title=enhanced_title,
             color=self.color_map.get(node_type, self.color_map["default"]),
             size=self.size_map.get(node_type, self.size_map["default"]),
             group=node_type,
@@ -328,8 +436,9 @@ class ResultsFormatter:
     
     def _add_relationship_to_graph(self, net: Network, relationship, added_edges: set, added_nodes: set):
         """Add a relationship to the Pyvis graph"""
-        start_id = relationship.start_node.id
-        end_id = relationship.end_node.id
+        # Use element_id if available (newer Neo4j versions), fallback to id
+        start_id = getattr(relationship.start_node, 'element_id', getattr(relationship.start_node, 'id', None))
+        end_id = getattr(relationship.end_node, 'element_id', getattr(relationship.end_node, 'id', None))
         rel_type = relationship.type
         rel_properties = dict(relationship)
         
@@ -394,23 +503,33 @@ class ResultsFormatter:
         for record in query_data:
             row = {}
             for key, value in record.items():
-                if hasattr(value, 'labels'):  # Neo4j Node
-                    labels = list(value.labels)
-                    properties = dict(value)
-                    row[f"{key}_type"] = labels[0] if labels else "Unknown"
-                    row[f"{key}_id"] = value.id
-                    # Add key properties
-                    if labels and labels[0] == "Study":
-                        row[f"{key}_study_id"] = properties.get('study_id', 'N/A')
-                        row[f"{key}_title"] = properties.get('title', 'N/A')
+                try:
+                    if hasattr(value, 'labels'):  # Neo4j Node
+                        labels = list(value.labels)
+                        properties = dict(value)
+                        row[f"{key}_type"] = labels[0] if labels else "Unknown"
+                        # Use element_id if available, fallback to id
+                        node_id = getattr(value, 'element_id', getattr(value, 'id', 'unknown'))
+                        row[f"{key}_id"] = str(node_id)
+                        # Add key properties
+                        if labels and labels[0] == "Study":
+                            row[f"{key}_study_id"] = str(properties.get('study_id', 'N/A'))
+                            row[f"{key}_title"] = str(properties.get('title', 'N/A'))
+                        else:
+                            row[f"{key}_name"] = str(properties.get('name', properties.get('organism_name', properties.get('factor_name', 'N/A'))))
+                    elif hasattr(value, 'type'):  # Neo4j Relationship
+                        row[f"{key}_relationship"] = str(value.type)
+                        # Use element_id if available, fallback to id
+                        start_id = getattr(value.start_node, 'element_id', getattr(value.start_node, 'id', 'unknown'))
+                        end_id = getattr(value.end_node, 'element_id', getattr(value.end_node, 'id', 'unknown'))
+                        row[f"{key}_start_id"] = str(start_id)
+                        row[f"{key}_end_id"] = str(end_id)
                     else:
-                        row[f"{key}_name"] = properties.get('name', properties.get('organism_name', properties.get('factor_name', 'N/A')))
-                elif hasattr(value, 'type'):  # Neo4j Relationship
-                    row[f"{key}_relationship"] = value.type
-                    row[f"{key}_start_id"] = value.start_node.id
-                    row[f"{key}_end_id"] = value.end_node.id
-                else:
-                    row[key] = value
+                        # Convert all values to strings to avoid struct/non-struct mixing
+                        row[key] = str(value) if value is not None else 'None'
+                except Exception as e:
+                    # Fallback for any problematic values
+                    row[f"{key}_error"] = f"Error processing: {str(e)}"
             
             if row:  # Only add non-empty rows
                 table_rows.append(row)
@@ -446,16 +565,21 @@ class ResultsFormatter:
         for record in query_data:
             row = {}
             for key, value in record.items():
-                if hasattr(value, 'labels'):  # Neo4j Node
-                    labels = list(value.labels)
-                    properties = dict(value)
-                    row[f"{key}_type"] = labels[0] if labels else "Unknown"
-                    row[f"{key}_properties"] = json.dumps(properties, default=str)
-                elif hasattr(value, 'type'):  # Neo4j Relationship
-                    row[f"{key}_relationship"] = value.type
-                    row[f"{key}_properties"] = json.dumps(dict(value), default=str)
-                else:
-                    row[key] = value
+                try:
+                    if hasattr(value, 'labels'):  # Neo4j Node
+                        labels = list(value.labels)
+                        properties = dict(value)
+                        row[f"{key}_type"] = str(labels[0] if labels else "Unknown")
+                        row[f"{key}_properties"] = json.dumps(properties, default=str)
+                    elif hasattr(value, 'type'):  # Neo4j Relationship
+                        row[f"{key}_relationship"] = str(value.type)
+                        row[f"{key}_properties"] = json.dumps(dict(value), default=str)
+                    else:
+                        # Convert all values to strings to avoid struct/non-struct mixing
+                        row[key] = str(value) if value is not None else 'None'
+                except Exception as e:
+                    # Fallback for any problematic values
+                    row[f"{key}_error"] = f"Error processing: {str(e)}"
             
             table_rows.append(row)
         

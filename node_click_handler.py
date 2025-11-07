@@ -240,7 +240,12 @@ class NodeClickHandler:
             if os.path.exists(target_emoji):
                 st.image(target_emoji, width=30)
         with target_cols[1]:
-            st.subheader(f"Explore {node_type}: {self._get_node_display_name(node_type, properties)}")
+            st.subheader(f"🎯 Explore {node_type}: {self._get_node_display_name(node_type, properties)}")
+        
+        # Show node properties in an expandable section
+        with st.expander("📋 Node Properties", expanded=False):
+            for key, value in properties.items():
+                st.write(f"**{key}:** {value}")
         
         # Get query suggestions
         suggestions = self.get_query_suggestions_for_node(node_type, properties)
@@ -249,23 +254,78 @@ class NodeClickHandler:
             st.info("No contextual queries available for this node type.")
             return None
         
-        # Create buttons for each suggestion
-        cols = st.columns(min(len(suggestions), 3))
+        st.markdown("**🔍 Choose an exploration option:**")
+        
+        # Create buttons for each suggestion in a more organized layout
+        cols = st.columns(min(len(suggestions), 2))
         selected_query = None
         
         for i, suggestion in enumerate(suggestions):
-            with cols[i % 3]:
+            with cols[i % 2]:
+                button_label = f"🔎 {suggestion['description']}"
                 if st.button(
-                    suggestion["description"], 
+                    button_label, 
                     key=f"node_query_{node_id}_{suggestion['type']}",
-                    help=f"Generate query to {suggestion['description'].lower()}"
+                    help=f"Generate query to {suggestion['description'].lower()}",
+                    use_container_width=True
                 ):
+                    # Show loading animation for query generation
+                    try:
+                        from loading_animations import loading_animations
+                        
+                        # Show node click feedback
+                        node_name = self._get_node_display_name(node_type, properties)
+                        loading_animations.show_node_click_feedback(node_type, node_name)
+                        
+                    except ImportError:
+                        pass
+                    
                     selected_query = self.generate_contextual_query(
                         node_type, properties, suggestion["type"]
                     )
+                    if selected_query:
+                        # Store the generated query in session state for the Cypher editor
+                        st.session_state.generated_node_query = selected_query
+                        st.session_state.node_query_description = suggestion['description']
+                        
+                        # Show success with animation if available
+                        try:
+                            from loading_animations import loading_animations
+                            loading_animations.show_success_animation(f"Query generated: {suggestion['description']}")
+                        except ImportError:
+                            st.success(f"✅ Generated query for: {suggestion['description']}")
+                        
+                        st.info("📝 **Query has been loaded into the Cypher Editor below.** Scroll down to execute it!")
                     break
         
         return selected_query
+    
+    def render_interactive_node_click_handler(self):
+        """Render the interactive node click handler interface"""
+        # Check if there's a node click event in session state
+        if 'clicked_node_data' in st.session_state:
+            node_data = st.session_state.clicked_node_data
+            
+            # Create an interactive panel
+            with st.container():
+                st.markdown("### 🎯 Node Interaction Panel")
+                
+                # Extract node information
+                node_id = node_data.get('node_id', 'unknown')
+                node_type = node_data.get('node_type', 'Unknown')
+                properties = node_data.get('properties', {})
+                
+                # Render the interaction panel
+                selected_query = self.render_node_interaction_panel(node_id, node_type, properties)
+                
+                # Clear button
+                if st.button("❌ Close Node Panel", key="close_node_panel"):
+                    del st.session_state.clicked_node_data
+                    st.rerun()
+                
+                return selected_query
+        
+        return None
     
     def _get_node_display_name(self, node_type: str, properties: Dict[str, Any]) -> str:
         """Get a display-friendly name for a node"""

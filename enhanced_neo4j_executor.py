@@ -296,7 +296,13 @@ class EnhancedNeo4jExecutor:
             with self._get_session() as session:
                 # Execute query with timeout
                 result = session.run(query, parameters=params or {})
-                data = result.data()
+                # Extract data while preserving Neo4j objects
+                data = []
+                for record in result:
+                    record_dict = {}
+                    for key in record.keys():
+                        record_dict[key] = record[key]
+                    data.append(record_dict)
                 
                 execution_time_ms = (time.time() - start_time) * 1000
                 
